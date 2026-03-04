@@ -1,0 +1,349 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model appointments {
+  appointment_id Int                 @id @default(autoincrement())
+  patient_id     Int?
+  schedule_id    Int?                @unique
+  room_id        Int?
+  status         appointment_status? @default(scheduled)
+  created_at     DateTime            @default(now()) @db.Timestamp(6)
+  deleted_at     DateTime?           @db.Timestamp(6)
+  child          child?              @relation(fields: [patient_id], references: [child_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_1")
+  work_schedules work_schedules?     @relation(fields: [schedule_id], references: [schedule_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_2")
+  room           room?               @relation(fields: [room_id], references: [room_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_3")
+  visit          visit?
+
+  @@index([status, created_at], map: "idx_appointments_status_date")
+}
+
+model assessment {
+  assessment_id         Int                     @id @default(autoincrement())
+  name                  String?                 @db.VarChar(255)
+  created_by            Int?
+  staff                 staff?                  @relation(fields: [created_by], references: [staff_id], onDelete: NoAction, onUpdate: NoAction, map: "assessment_ibfk_1")
+  assessment_score_band assessment_score_band[]
+  child_assessment      child_assessment[]
+  question              question[]
+}
+
+model assessment_answer {
+  answer_id           Int               @id @default(autoincrement())
+  child_assessment_id Int?
+  question_id         Int?
+  choice_id           Int?
+  score               Int?
+  child_assessment    child_assessment? @relation(fields: [child_assessment_id], references: [child_assessment_id], onDelete: Cascade, onUpdate: NoAction, map: "assessment_answer_ibfk_1")
+  question            question?         @relation(fields: [question_id], references: [question_id], onDelete: NoAction, onUpdate: NoAction, map: "assessment_answer_ibfk_2")
+  choice              choice?           @relation(fields: [choice_id], references: [choice_id], onDelete: NoAction, onUpdate: NoAction, map: "assessment_answer_ibfk_3")
+
+  @@unique([child_assessment_id, question_id])
+}
+
+model assessment_score_band {
+  band_id             Int                @id @default(autoincrement())
+  assessment_id       Int
+  min_score           Int
+  max_score           Int
+  severity_level      severity_level
+  interpretation_text String             @db.VarChar(255)
+  recommendation_text String?            @db.VarChar(255)
+  assessment          assessment         @relation(fields: [assessment_id], references: [assessment_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_band_assessment")
+  child_assessment    child_assessment[]
+
+  @@index([assessment_id, min_score, max_score], map: "idx_band_assessment")
+}
+
+model child {
+  child_id         Int                @id @default(autoincrement())
+  first_name       String?            @db.VarChar(100)
+  last_name        String?            @db.VarChar(100)
+  birth_date       DateTime?          @db.Date
+  deleted_at       DateTime?          @db.Timestamp(6)
+  appointments     appointments[]
+  child_assessment child_assessment[]
+  child_parent     child_parent[]
+}
+
+model child_assessment {
+  child_assessment_id   Int                    @id @default(autoincrement())
+  child_id              Int?
+  assessment_id         Int?
+  total_score           Int?                   @default(0)
+  interpreted_band_id   Int?
+  interpreted_text      String?                @db.VarChar(255)
+  assessed_at           DateTime               @default(now()) @db.Timestamp(6)
+  assessment_answer     assessment_answer[]
+  child                 child?                 @relation(fields: [child_id], references: [child_id], onDelete: Cascade, onUpdate: NoAction, map: "child_assessment_ibfk_1")
+  assessment            assessment?            @relation(fields: [assessment_id], references: [assessment_id], onDelete: Cascade, onUpdate: NoAction, map: "child_assessment_ibfk_2")
+  assessment_score_band assessment_score_band? @relation(fields: [interpreted_band_id], references: [band_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_child_assessment_band")
+}
+
+model child_parent {
+  child_id  Int
+  parent_id Int
+  child     child  @relation(fields: [child_id], references: [child_id], onDelete: Cascade, onUpdate: NoAction, map: "child_parent_ibfk_1")
+  parent    parent @relation(fields: [parent_id], references: [parent_id], onDelete: Cascade, onUpdate: NoAction, map: "child_parent_ibfk_2")
+
+  @@id([child_id, parent_id])
+}
+
+model choice {
+  choice_id         Int                 @id @default(autoincrement())
+  question_id       Int?
+  choice_text       String?             @db.VarChar(255)
+  score             Int?
+  assessment_answer assessment_answer[]
+  question          question?           @relation(fields: [question_id], references: [question_id], onDelete: Cascade, onUpdate: NoAction, map: "choice_ibfk_1")
+}
+
+model diagnose {
+  diagnose_id    Int     @id @default(autoincrement())
+  visit_id       Int?
+  diagnosis_text String?
+  visit          visit?  @relation(fields: [visit_id], references: [visit_id], onDelete: Cascade, onUpdate: NoAction, map: "diagnose_ibfk_1")
+}
+
+model dispense {
+  dispense_id     Int          @id @default(autoincrement())
+  prescription_id Int
+  staff_id        Int
+  prescription    prescription @relation(fields: [prescription_id], references: [prescription_id], onDelete: NoAction, onUpdate: NoAction, map: "dispense_ibfk_prescription")
+  staff           staff        @relation(fields: [staff_id], references: [staff_id], onDelete: NoAction, onUpdate: NoAction, map: "dispense_ibfk_staff")
+}
+
+model drug {
+  drug_id           Int                 @id @default(autoincrement())
+  name              String?             @db.VarChar(255)
+  dose              String?             @db.VarChar(100)
+  prescription_item prescription_item[]
+}
+
+model invoice {
+  invoice_id   Int            @id @default(autoincrement())
+  visit_id     Int?
+  total_amount Decimal?       @db.Decimal(10, 2)
+  deleted_at   DateTime?      @db.Timestamp(6)
+  visit        visit?         @relation(fields: [visit_id], references: [visit_id], onDelete: Cascade, onUpdate: NoAction, map: "invoice_ibfk_1")
+  invoice_item invoice_item[]
+  payment      payment[]
+}
+
+model invoice_item {
+  invoice_item_id      Int                @id @default(autoincrement())
+  invoice_id           Int
+  item_type            item_type          @default(service)
+  description          String             @db.VarChar(255)
+  qty                  Int                @default(1)
+  unit_price           Decimal            @default(0.00) @db.Decimal(10, 2)
+  amount               Decimal?           @default(dbgenerated("((qty)::numeric * unit_price)")) @db.Decimal(10, 2)
+  created_at           DateTime           @default(now()) @db.Timestamp(6)
+  prescription_item_id Int?
+  invoice              invoice            @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_invoice_item_invoice")
+  prescription_item    prescription_item? @relation(fields: [prescription_item_id], references: [prescription_item_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_invoice_prescription_item")
+
+  @@index([invoice_id], map: "idx_invoice_item_invoice")
+}
+
+model notifications {
+  notification_id BigInt   @id @default(autoincrement())
+  user_id         Int
+  title           String   @db.VarChar(100)
+  message         String   @db.VarChar(255)
+  genre           String?  @db.VarChar(64)
+  created_at      DateTime @default(now()) @db.Timestamp(6)
+  users           users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_notify_user")
+
+  @@index([user_id, created_at], map: "idx_notify_user_read")
+}
+
+model parent {
+  parent_id    Int            @id @default(autoincrement())
+  first_name   String?        @db.VarChar(100)
+  last_name    String?        @db.VarChar(100)
+  phone        String?        @db.VarChar(50)
+  deleted_at   DateTime?      @db.Timestamp(6)
+  user_id      Int
+  child_parent child_parent[]
+  users        users          @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_parent_user")
+}
+
+model payment {
+  payment_id   Int       @id @default(autoincrement())
+  invoice_id   Int?
+  amount       Decimal?  @db.Decimal(10, 2)
+  payment_date DateTime? @default(now()) @db.Timestamp(6)
+  deleted_at   DateTime? @db.Timestamp(6)
+  invoice      invoice?  @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade, onUpdate: NoAction, map: "payment_ibfk_1")
+}
+
+model prescription {
+  prescription_id   Int                 @id @default(autoincrement())
+  visit_id          Int?
+  dispense          dispense[]
+  visit             visit?              @relation(fields: [visit_id], references: [visit_id], onDelete: Cascade, onUpdate: NoAction, map: "prescription_ibfk_1")
+  prescription_item prescription_item[]
+}
+
+model prescription_item {
+  prescription_item_id Int            @id @default(autoincrement())
+  prescription_id      Int?
+  drug_id              Int?
+  quantity             Int?
+  invoice_item         invoice_item[]
+  prescription         prescription?  @relation(fields: [prescription_id], references: [prescription_id], onDelete: Cascade, onUpdate: NoAction, map: "prescription_item_ibfk_1")
+  drug                 drug?          @relation(fields: [drug_id], references: [drug_id], onDelete: NoAction, onUpdate: NoAction, map: "prescription_item_ibfk_2")
+}
+
+model question {
+  question_id       Int                 @id @default(autoincrement())
+  assessment_id     Int?
+  question_text     String?
+  assessment_answer assessment_answer[]
+  choice            choice[]
+  assessment        assessment?         @relation(fields: [assessment_id], references: [assessment_id], onDelete: Cascade, onUpdate: NoAction, map: "question_ibfk_1")
+}
+
+model roles {
+  role_id    Int          @id @default(autoincrement())
+  role_name  String       @unique @db.VarChar(50)
+  user_roles user_roles[]
+}
+
+model room {
+  room_id      Int            @id @default(autoincrement())
+  room_name    String?        @db.VarChar(100)
+  appointments appointments[]
+}
+
+model staff {
+  staff_id       Int              @id @default(autoincrement())
+  first_name     String?          @db.VarChar(100)
+  last_name      String?          @db.VarChar(100)
+  role           staff_role?
+  status         staff_status?    @default(active)
+  user_id        Int
+  assessment     assessment[]
+  dispense       dispense[]
+  users          users            @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_staff_user")
+  work_schedules work_schedules[]
+}
+
+model treatment_plan {
+  plan_id     Int     @id @default(autoincrement())
+  visit_id    Int?
+  plan_detail String?
+  visit       visit?  @relation(fields: [visit_id], references: [visit_id], onDelete: Cascade, onUpdate: NoAction, map: "treatment_plan_ibfk_1")
+}
+
+model user_roles {
+  user_id Int
+  role_id Int
+  roles   roles @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_roles_role")
+  users   users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_roles_user")
+
+  @@id([user_id, role_id])
+}
+
+model users {
+  user_id       Int             @id @default(autoincrement())
+  username      String          @unique @db.VarChar(100)
+  password_hash String          @db.VarChar(255)
+  user_type     user_type
+  is_active     Boolean         @default(true)
+  last_login_at DateTime?       @db.Timestamp(6)
+  created_at    DateTime        @default(now()) @db.Timestamp(6)
+  updated_at    DateTime?       @db.Timestamp(6)
+  notifications notifications[]
+  parent        parent[]
+  staff         staff[]
+  user_roles    user_roles[]
+}
+
+model visit {
+  visit_id       Int              @id @default(autoincrement())
+  appointment_id Int?             @unique
+  visit_date     DateTime?        @default(now()) @db.Timestamp(6)
+  deleted_at     DateTime?        @db.Timestamp(6)
+  diagnose       diagnose[]
+  invoice        invoice[]
+  prescription   prescription[]
+  treatment_plan treatment_plan[]
+  appointments   appointments?    @relation(fields: [appointment_id], references: [appointment_id], onDelete: NoAction, onUpdate: NoAction, map: "visit_ibfk_1")
+  vital_signs    vital_signs?
+}
+
+model vital_signs {
+  vital_id     Int      @id @default(autoincrement())
+  visit_id     Int      @unique
+  weight_kg    Decimal? @db.Decimal(5, 2)
+  height_cm    Decimal? @db.Decimal(5, 2)
+  bp_systolic  Int?
+  bp_diastolic Int?
+  heart_rate   Int?
+  note         String?  @db.VarChar(255)
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  visit        visit    @relation(fields: [visit_id], references: [visit_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_vital_visit")
+}
+
+model work_schedules {
+  schedule_id  Int           @id @default(autoincrement())
+  staff_id     Int?
+  work_date    DateTime?     @db.Date
+  start_time   DateTime?     @db.Time(6)
+  end_time     DateTime?     @db.Time(6)
+  slot_status  slot_status?  @default(available)
+  appointments appointments?
+  staff        staff?        @relation(fields: [staff_id], references: [staff_id], onDelete: NoAction, onUpdate: NoAction, map: "work_schedules_ibfk_1")
+
+  @@index([staff_id, work_date], map: "idx_work_schedules_staff_date")
+}
+
+enum appointment_status {
+  scheduled
+  completed
+  cancelled
+}
+
+enum item_type {
+  service
+  assessment
+  drug
+  other
+}
+
+enum severity_level {
+  normal
+  mild
+  moderate
+  severe
+}
+
+enum slot_status {
+  available
+  booked
+  blocked
+}
+
+enum staff_role {
+  psychiatrist
+  psychologist
+  nurse
+  admin
+}
+
+enum staff_status {
+  active
+  inactive
+}
+
+enum user_type {
+  staff
+  parent
+}
