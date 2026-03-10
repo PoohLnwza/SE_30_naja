@@ -10,3 +10,66 @@ body {
   margin: 0;
   padding: 0;
 }
+
+
+/* ===== Clinic Theme ===== */
+
+body{
+  background:#f3faf6;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.page{
+  padding:40px;
+  display:flex;
+  justify-content:center;
+}
+
+.card{
+  background:white;
+  padding:30px;
+  border-radius:12px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.1);
+  width:800px;
+}
+
+.title{
+  color:#1b7f5a;
+  margin-bottom:20px;
+}
+
+button{
+  background:#1b7f5a;
+  color:white;
+  border:none;
+  padding:8px 14px;
+  border-radius:6px;
+  margin:4px;
+  cursor:pointer;
+}
+
+button:hover{
+  background:#14664a;
+}
+
+input{
+  padding:8px;
+  margin:5px;
+  border:1px solid #ccc;
+  border-radius:6px;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+th{
+  background:#e7f6ef;
+  padding:10px;
+}
+
+td{
+  padding:10px;
+  border-bottom:1px solid #eee;
+}
