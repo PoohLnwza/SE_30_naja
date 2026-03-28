@@ -8,6 +8,7 @@ export function parentNav(): NavItem[] {
     { label: "Book Appointment", href: "/appointments/parent" },
     { label: "Assessments", href: "/assessments/parent" },
     { label: "History", href: "/appointments/parent/history" },
+    { label: "Payments", href: "/payment/parent" },
     { label: "Profile", href: "/profile" },
   ];
 }
@@ -18,6 +19,7 @@ export function staffNav(profile: Profile | null): NavItem[] {
     { label: "Appointments", href: "/appointments/staff" },
     { label: "Visit Records", href: "/visits/staff" },
     { label: "Assessments", href: "/assessments/staff" },
+    { label: "Payments", href: "/payment/staff" },
     { label: "Create User", href: "/dashboard/staff/create-user" },
     { label: "Family Links", href: "/dashboard/staff/family-links" },
   ];

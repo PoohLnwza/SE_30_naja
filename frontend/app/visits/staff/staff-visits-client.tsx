@@ -37,6 +37,12 @@ type Appointment = {
     first_name: string | null;
     last_name: string | null;
   } | null;
+  booked_by: {
+    parent: Array<{
+      first_name: string | null;
+      last_name: string | null;
+    }>;
+  } | null;
   work_schedules: {
     work_date: string | null;
     start_time: string | null;
@@ -460,6 +466,9 @@ export default function StaffVisitsClient() {
                           {formatDate(appointment.work_schedules?.work_date || null)} | {formatTime(appointment.work_schedules?.start_time || null)} - {formatTime(appointment.work_schedules?.end_time || null)}
                         </Typography>
                         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                          Parent: {appointment.booked_by?.parent?.[0]?.first_name || "-"} {appointment.booked_by?.parent?.[0]?.last_name || ""}
+                        </Typography>
+                        <Typography color="text.secondary" sx={{ mt: 0.5 }}>
                           Specialist: {appointment.work_schedules?.staff?.first_name || "-"} {appointment.work_schedules?.staff?.last_name || ""}
                         </Typography>
                       </Box>
@@ -557,7 +566,7 @@ export default function StaffVisitsClient() {
                   required
                 >
                   {availableAppointments.map((appointment) => (
-                    <MenuItem key={appointment.appointment_id} value={appointment.appointment_id}>
+                    <MenuItem key={appointment.appointment_id} value={String(appointment.appointment_id)}>
                       #{appointment.appointment_id} - {appointment.child?.first_name || "-"} {appointment.child?.last_name || ""}
                     </MenuItem>
                   ))}

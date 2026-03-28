@@ -26,7 +26,7 @@ type ScheduleUpdatePayload = Partial<
 >;
 
 type BookAppointmentPayload = {
-  patient_id: number;
+  patient_id?: number | null;
   schedule_id: number;
   room_id?: number;
 };
@@ -44,7 +44,10 @@ export class AppointmentsService {
       where: {
         staff_id: staffId ? Number(staffId) : undefined,
         slot_status: 'available',
-        ...(date ? { work_date: this.toDayRange(date) } : {}),
+        work_date: date ? this.toDayRange(date) : { gte: this.startOfToday() },
+        staff: {
+          role: { in: ['psychiatrist', 'psychologist', 'admin'] },
+        },
       },
       include: {
         staff: {
@@ -290,7 +293,10 @@ export class AppointmentsService {
 
       const childIds =
         parentRecord?.child_parent.map((item) => item.child_id) ?? [];
-      where.patient_id = { in: childIds.length > 0 ? childIds : [-1] };
+      where.OR = [
+        { patient_id: { in: childIds.length > 0 ? childIds : [-1] } },
+        { booked_by_user_id: user.user_id },
+      ];
     }
 
     if (user.user_type === 'staff') {
@@ -318,6 +324,18 @@ export class AppointmentsService {
             last_name: true,
           },
         },
+        booked_by: {
+          select: {
+            user_id: true,
+            username: true,
+            parent: {
+              select: {
+                first_name: true,
+                last_name: true,
+              },
+            },
+          },
+        },
         work_schedules: {
           include: {
             staff: {
@@ -338,25 +356,27 @@ export class AppointmentsService {
 
   async bookAppointment(user: AuthUser, data: BookAppointmentPayload) {
     return this.prisma.$transaction(async (tx) => {
-      const child = await tx.child.findUnique({
-        where: { child_id: data.patient_id },
-        select: { child_id: true },
-      });
-
-      if (!child) {
-        throw new NotFoundException('Patient not found');
-      }
-
-      if (user.user_type === 'parent') {
-        const parentRecord = await tx.parent.findFirst({
-          where: { user_id: user.user_id },
-          include: { child_parent: true },
+      if (data.patient_id) {
+        const child = await tx.child.findUnique({
+          where: { child_id: data.patient_id },
+          select: { child_id: true },
         });
 
-        const childIds =
-          parentRecord?.child_parent.map((item) => item.child_id) ?? [];
-        if (!childIds.includes(data.patient_id)) {
-          throw new ForbiddenException('You can only book for your own child');
+        if (!child) {
+          throw new NotFoundException('Patient not found');
+        }
+
+        if (user.user_type === 'parent') {
+          const parentRecord = await tx.parent.findFirst({
+            where: { user_id: user.user_id },
+            include: { child_parent: true },
+          });
+
+          const childIds =
+            parentRecord?.child_parent.map((item) => item.child_id) ?? [];
+          if (!childIds.includes(data.patient_id)) {
+            throw new ForbiddenException('You can only book for your own child');
+          }
         }
       }
 
@@ -408,9 +428,10 @@ export class AppointmentsService {
 
       const appointment = await tx.appointments.create({
         data: {
-          patient_id: data.patient_id,
+          patient_id: data.patient_id ?? null,
           schedule_id: data.schedule_id,
           room_id: data.room_id ?? null,
+          booked_by_user_id: user.user_id,
           status: 'scheduled',
         },
         include: {
@@ -430,7 +451,7 @@ export class AppointmentsService {
       });
 
       return appointment;
-    });
+    }, { timeout: 15000 });
   }
 
   async cancelAppointment(user: AuthUser, appointmentId: number) {
@@ -488,7 +509,7 @@ export class AppointmentsService {
       }
 
       return updatedAppointment;
-    });
+    }, { timeout: 15000 });
   }
 
   private ensureStaff(user: AuthUser) {

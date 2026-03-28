@@ -20,6 +20,8 @@ import api from "@/lib/api";
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
     username: "",
     password: "",
     confirmPassword: "",
@@ -52,6 +54,8 @@ export default function RegisterPage() {
         username: form.username,
         password: form.password,
         userType: "parent",
+        firstName: form.firstName || undefined,
+        lastName: form.lastName || undefined,
       });
       router.push("/login");
     } catch (err: any) {
@@ -79,6 +83,8 @@ export default function RegisterPage() {
 
       <Box component="form" onSubmit={handleSubmit}>
         <Stack spacing={2.25}>
+          <TextField fullWidth label="ชื่อจริง" value={form.firstName} onChange={handleChange("firstName")} required />
+          <TextField fullWidth label="นามสกุล" value={form.lastName} onChange={handleChange("lastName")} required />
           <TextField fullWidth label="Username" value={form.username} onChange={handleChange("username")} required />
           <TextField fullWidth label="Password" type="password" value={form.password} onChange={handleChange("password")} required />
           <TextField

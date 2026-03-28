@@ -5,6 +5,8 @@ export type Profile = {
   is_active: boolean;
   staffRole?: string | null;
   roleNames?: string[];
+  first_name?: string | null;
+  last_name?: string | null;
 };
 
 export function getEffectiveRoles(profile: Profile | null) {

@@ -652,7 +652,7 @@ export class AssessmentService {
           },
         },
         orderBy: {
-          question_id: 'asc',
+          question_id: 'asc' as const,
         },
       },
     };

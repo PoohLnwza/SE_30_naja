@@ -47,8 +47,8 @@ export class AuthService {
 
     await this.prisma.parent.create({
       data: {
-        first_name: 'New',
-        last_name: 'Parent',
+        first_name: dto.firstName ?? null,
+        last_name: dto.lastName ?? null,
         phone: '',
         user_id: user.user_id,
       },
@@ -148,6 +148,12 @@ export class AuthService {
         user_type: true,
         is_active: true,
         staff: true,
+        parent: {
+          select: {
+            first_name: true,
+            last_name: true,
+          },
+        },
         user_roles: {
           include: {
             roles: {
@@ -168,7 +174,14 @@ export class AuthService {
     const roleNames = user.user_roles.map((item) =>
       this.toPublicRoleName(item.roles.role_name),
     );
-    return { ...user, staffRole, roleNames };
+    const parentProfile = Array.isArray(user.parent) ? user.parent[0] : user.parent;
+    return {
+      ...user,
+      staffRole,
+      roleNames,
+      first_name: parentProfile?.first_name ?? null,
+      last_name: parentProfile?.last_name ?? null,
+    };
   }
 
   private async ensureRole(roleName: string) {

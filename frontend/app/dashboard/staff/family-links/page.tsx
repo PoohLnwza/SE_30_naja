@@ -87,6 +87,10 @@ export default function StaffFamilyLinksPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [childFirstName, setChildFirstName] = useState("");
+  const [childLastName, setChildLastName] = useState("");
+  const [childBirthDate, setChildBirthDate] = useState("");
+  const [savingChild, setSavingChild] = useState(false);
 
   const canManageLinks = useMemo(
     () => profile?.user_type === "staff" && hasRole(profile, linkManagerRoles),
@@ -127,7 +131,7 @@ export default function StaffFamilyLinksPage() {
     void loadData();
   }, [loadData]);
 
-  const handleCreateLink = async (event: React.FormEvent) => {
+  const handleCreateLink = async (event: React.SyntheticEvent) => {
     event.preventDefault();
     setError("");
     setSuccess("");
@@ -154,6 +158,31 @@ export default function StaffFamilyLinksPage() {
       setError(Array.isArray(message) ? message.join(", ") : (message ?? "Unable to link child"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateChild = async (event: React.SyntheticEvent) => {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+    setSavingChild(true);
+    try {
+      await api.post("/child", {
+        first_name: childFirstName,
+        last_name: childLastName,
+        birth_date: childBirthDate || undefined,
+      });
+      setChildFirstName("");
+      setChildLastName("");
+      setChildBirthDate("");
+      setSuccess("Child record created");
+      await loadData();
+    } catch (err: unknown) {
+      const error = err as AxiosError<ApiErrorResponse>;
+      const message = error.response?.data?.message;
+      setError(Array.isArray(message) ? message.join(", ") : (message ?? "Unable to create child"));
+    } finally {
+      setSavingChild(false);
     }
   };
 
@@ -242,6 +271,47 @@ export default function StaffFamilyLinksPage() {
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", xl: "0.95fr 1.05fr" }} gap={2.5}>
         <Stack spacing={2.5}>
+          <DashboardCard>
+            <Typography variant="h5">Add child</Typography>
+            <Typography color="text.secondary" sx={{ mt: 1 }}>
+              Create a new child record that can then be linked to a parent account.
+            </Typography>
+
+            <Box
+              component="form"
+              onSubmit={handleCreateChild}
+              sx={{ mt: 2.5 }}
+            >
+              <Stack spacing={2}>
+                <TextField
+                  label="First name"
+                  value={childFirstName}
+                  onChange={(e) => setChildFirstName(e.target.value)}
+                  required
+                  fullWidth
+                />
+                <TextField
+                  label="Last name"
+                  value={childLastName}
+                  onChange={(e) => setChildLastName(e.target.value)}
+                  required
+                  fullWidth
+                />
+                <TextField
+                  label="Birth date"
+                  type="date"
+                  value={childBirthDate}
+                  onChange={(e) => setChildBirthDate(e.target.value)}
+                  fullWidth
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
+                <Button type="submit" variant="contained" disabled={savingChild}>
+                  {savingChild ? "Saving..." : "Add child"}
+                </Button>
+              </Stack>
+            </Box>
+          </DashboardCard>
+
           <DashboardCard>
             <Typography variant="h5">Create link</Typography>
             <Typography color="text.secondary" sx={{ mt: 1 }}>

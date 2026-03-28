@@ -95,17 +95,12 @@ export default function BookAppointmentPage() {
   }, [scheduleId]);
 
   const handleConfirmBooking = async () => {
-    if (!selectedChildId) {
-      setError('Please select a child profile before booking.');
-      return;
-    }
-
     setSubmitting(true);
     setError('');
 
     try {
       await api.post('/appointments', {
-        patient_id: Number(selectedChildId),
+        patient_id: selectedChildId ? Number(selectedChildId) : undefined,
         schedule_id: scheduleId,
         room_id: selectedRoomId ? Number(selectedRoomId) : undefined,
       });
@@ -133,7 +128,7 @@ export default function BookAppointmentPage() {
           <Button variant="outlined" onClick={() => router.back()}>
             Back
           </Button>
-          <Button variant="contained" onClick={handleConfirmBooking} disabled={submitting || context.children.length === 0}>
+          <Button variant="contained" onClick={handleConfirmBooking} disabled={submitting}>
             {submitting ? 'Booking...' : 'Confirm booking'}
           </Button>
         </>
@@ -165,24 +160,26 @@ export default function BookAppointmentPage() {
           <DashboardCard>
             <Typography variant="h5">Booking details</Typography>
             <Stack spacing={2.25} sx={{ mt: 2.25 }}>
-              <TextField
-                select
-                label="Select child"
-                value={selectedChildId}
-                onChange={(event) => setSelectedChildId(event.target.value)}
-                disabled={context.children.length === 0}
-                helperText={
-                  context.children.length === 0
-                    ? 'No child profile is linked to this account yet.'
-                    : 'Choose who will attend this appointment.'
-                }
-              >
-                {context.children.map((child) => (
-                  <MenuItem key={child.child_id} value={child.child_id}>
-                    {child.first_name || '-'} {child.last_name || ''}
-                  </MenuItem>
-                ))}
-              </TextField>
+              {context.children.length === 0 ? (
+                <Alert severity="info">
+                  ยังไม่มีข้อมูลเด็กในระบบ — สามารถจองได้เลย เจ้าหน้าที่จะเพิ่มข้อมูลเด็กในวันที่มาคลีนิค
+                </Alert>
+              ) : (
+                <TextField
+                  select
+                  label="Select child"
+                  value={selectedChildId}
+                  onChange={(event) => setSelectedChildId(event.target.value)}
+                  helperText="Choose who will attend this appointment."
+                  fullWidth
+                >
+                  {context.children.map((child) => (
+                    <MenuItem key={child.child_id} value={child.child_id}>
+                      {child.first_name || '-'} {child.last_name || ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
 
               <TextField
                 select

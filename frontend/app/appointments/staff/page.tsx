@@ -41,6 +41,10 @@ type Appointment = {
     first_name: string | null;
     last_name: string | null;
   } | null;
+  booked_by: {
+    username: string;
+    parent: { first_name: string | null; last_name: string | null }[];
+  } | null;
   work_schedules: {
     work_date: string | null;
     start_time: string | null;
@@ -281,7 +285,11 @@ export default function StaffAppointmentsPage() {
                   <Box display="flex" justifyContent="space-between" gap={2} flexWrap="wrap">
                     <Box>
                       <Typography sx={{ fontWeight: 700 }}>
-                        {appointment.child?.first_name || "-"} {appointment.child?.last_name || ""}
+                        {appointment.child
+                          ? `${appointment.child.first_name || "-"} ${appointment.child.last_name || ""}`
+                          : appointment.booked_by?.parent?.[0]
+                            ? `${appointment.booked_by.parent[0].first_name || "-"} ${appointment.booked_by.parent[0].last_name || ""} (ผู้ปกครอง)`
+                            : `${appointment.booked_by?.username || "-"} (ผู้ปกครอง)`}
                       </Typography>
                       <Typography color="text.secondary" sx={{ mt: 0.5 }}>
                         Specialist: {appointment.work_schedules?.staff?.first_name || "-"} {appointment.work_schedules?.staff?.last_name || ""}

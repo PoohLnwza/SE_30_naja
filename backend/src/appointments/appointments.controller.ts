@@ -82,7 +82,7 @@ export class AppointmentsController {
   @Post()
   bookAppointment(
     @Request() req: any,
-    @Body() createDto: { patient_id: number; schedule_id: number; room_id?: number },
+    @Body() createDto: { patient_id?: number | null; schedule_id: number; room_id?: number },
   ) {
     return this.appointmentsService.bookAppointment(req.user, createDto);
   }

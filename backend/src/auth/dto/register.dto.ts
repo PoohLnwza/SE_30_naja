@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, MinLength, IsEnum, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, MinLength, IsEnum, IsOptional, MaxLength } from 'class-validator';
 
 export enum UserType {
   staff = 'staff',
@@ -16,6 +16,16 @@ export class RegisterDto {
 
   @IsEnum(UserType)
   userType: UserType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  lastName?: string;
 
   @IsOptional()
   @IsString()

@@ -8,17 +8,19 @@ datasource db {
 }
 
 model appointments {
-  appointment_id Int                 @id @default(autoincrement())
-  patient_id     Int?
-  schedule_id    Int?                @unique
-  room_id        Int?
-  status         appointment_status? @default(scheduled)
-  created_at     DateTime            @default(now()) @db.Timestamp(6)
-  deleted_at     DateTime?           @db.Timestamp(6)
-  child          child?              @relation(fields: [patient_id], references: [child_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_1")
-  work_schedules work_schedules?     @relation(fields: [schedule_id], references: [schedule_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_2")
-  room           room?               @relation(fields: [room_id], references: [room_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_3")
-  visit          visit?
+  appointment_id    Int                 @id @default(autoincrement())
+  patient_id        Int?
+  schedule_id       Int?                @unique
+  room_id           Int?
+  booked_by_user_id Int?
+  status            appointment_status? @default(scheduled)
+  created_at        DateTime            @default(now()) @db.Timestamp(6)
+  deleted_at        DateTime?           @db.Timestamp(6)
+  child             child?              @relation(fields: [patient_id], references: [child_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_1")
+  work_schedules    work_schedules?     @relation(fields: [schedule_id], references: [schedule_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_2")
+  room              room?               @relation(fields: [room_id], references: [room_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_3")
+  booked_by         users?              @relation(fields: [booked_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  visit             visit?
 
   @@index([status, created_at], map: "idx_appointments_status_date")
 }
@@ -127,11 +129,12 @@ model drug {
 }
 
 model invoice {
-  invoice_id   Int            @id @default(autoincrement())
+  invoice_id   Int              @id @default(autoincrement())
   visit_id     Int?
-  total_amount Decimal?       @db.Decimal(10, 2)
-  deleted_at   DateTime?      @db.Timestamp(6)
-  visit        visit?         @relation(fields: [visit_id], references: [visit_id], onDelete: Cascade, onUpdate: NoAction, map: "invoice_ibfk_1")
+  total_amount Decimal?         @db.Decimal(10, 2)
+  status       invoice_status   @default(unpaid)
+  deleted_at   DateTime?        @db.Timestamp(6)
+  visit        visit?           @relation(fields: [visit_id], references: [visit_id], onDelete: Cascade, onUpdate: NoAction, map: "invoice_ibfk_1")
   invoice_item invoice_item[]
   payment      payment[]
 }
@@ -176,12 +179,18 @@ model parent {
 }
 
 model payment {
-  payment_id   Int       @id @default(autoincrement())
-  invoice_id   Int?
-  amount       Decimal?  @db.Decimal(10, 2)
-  payment_date DateTime? @default(now()) @db.Timestamp(6)
-  deleted_at   DateTime? @db.Timestamp(6)
-  invoice      invoice?  @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade, onUpdate: NoAction, map: "payment_ibfk_1")
+  payment_id   Int            @id @default(autoincrement())
+  invoice_id   Int
+  amount       Decimal        @db.Decimal(10, 2)
+  method       String         @default("qr_code") @db.VarChar(50)
+  status       payment_status @default(pending)
+  slip_image   String?        @db.VarChar(500)
+  confirmed_by Int?
+  confirmed_at DateTime?      @db.Timestamp(6)
+  payment_date DateTime       @default(now()) @db.Timestamp(6)
+  deleted_at   DateTime?      @db.Timestamp(6)
+  invoice      invoice        @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade, onUpdate: NoAction, map: "payment_ibfk_1")
+  staff        staff?         @relation(fields: [confirmed_by], references: [staff_id], onDelete: NoAction, onUpdate: NoAction, map: "payment_ibfk_staff")
 }
 
 model prescription {
@@ -232,6 +241,7 @@ model staff {
   user_id        Int
   assessment     assessment[]
   dispense       dispense[]
+  payment        payment[]
   users          users            @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_staff_user")
   work_schedules work_schedules[]
 }
@@ -265,6 +275,7 @@ model users {
   parent        parent[]
   staff         staff[]
   user_roles    user_roles[]
+  appointments  appointments[]
 }
 
 model visit {
@@ -342,6 +353,18 @@ enum staff_role {
 enum staff_status {
   active
   inactive
+}
+
+enum invoice_status {
+  unpaid
+  paid
+  partially_paid
+}
+
+enum payment_status {
+  pending
+  confirmed
+  rejected
 }
 
 enum user_type {

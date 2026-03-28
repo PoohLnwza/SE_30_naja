@@ -11,6 +11,7 @@ import { ChildParentModule } from './child_parent/child_parent.module';
 import { InvoiceModule } from './invoice/invoice.module';
 import { DrugModule } from './drug/drug.module';
 import { VisitModule } from './visit/visit.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { VisitModule } from './visit/visit.module';
     InvoiceModule,
     DrugModule,
     VisitModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -130,7 +130,9 @@ export default function AppointmentHistoryPage() {
                 <Box display="flex" justifyContent="space-between" gap={2} flexWrap="wrap">
                   <Box>
                     <Typography variant="h6">
-                      {appointment.child?.first_name || '-'} {appointment.child?.last_name || ''}
+                      {appointment.child
+                        ? `${appointment.child.first_name || '-'} ${appointment.child.last_name || ''}`
+                        : `${profile?.first_name || profile?.username || '-'} ${profile?.last_name || ''} (ผู้ปกครอง)`}
                     </Typography>
                     <Typography color="text.secondary" sx={{ mt: 0.75 }}>
                       Specialist: {appointment.work_schedules?.staff?.first_name || '-'} {appointment.work_schedules?.staff?.last_name || ''}
