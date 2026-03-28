@@ -134,6 +134,12 @@ export default function ParentDashboardPage() {
           >
             View history
           </Button>
+          <Button
+            variant="outlined"
+            onClick={() => router.push("/visits/parent")}
+          >
+            View prescriptions & bills
+          </Button>
         </>
       }
     >

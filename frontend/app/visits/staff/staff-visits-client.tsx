@@ -11,6 +11,7 @@ import {
   Divider,
   IconButton,
   MenuItem,
+  Pagination,
   Stack,
   TextField,
   Typography,
@@ -31,6 +32,7 @@ type ApiErrorResponse = {
 type Appointment = {
   appointment_id: number;
   status: string | null;
+  approval_status?: string | null;
   patient_id?: number | null;
   child: {
     child_id?: number;
@@ -85,12 +87,21 @@ type VisitRecord = {
   appointment: {
     appointment_id: number;
     status: string | null;
+    approval_status?: string | null;
     patient_id: number | null;
     patient: {
       child_id: number;
       first_name: string | null;
       last_name: string | null;
       birth_date: string | null;
+    } | null;
+    booked_by?: {
+      user_id?: number;
+      username?: string | null;
+      parent?: Array<{
+        first_name: string | null;
+        last_name: string | null;
+      }>;
     } | null;
     room: {
       room_name: string | null;
@@ -149,6 +160,12 @@ type VisitFormState = {
   note: string;
   diagnoses: string;
   treatment_plans: string;
+  service_items: Array<{
+    id: string;
+    description: string;
+    qty: string;
+    unit_price: string;
+  }>;
 };
 
 type PrescriptionFormItem = {
@@ -168,6 +185,7 @@ const emptyForm: VisitFormState = {
   note: "",
   diagnoses: "",
   treatment_plans: "",
+  service_items: [createServiceItem()],
 };
 
 export default function StaffVisitsClient() {
@@ -187,8 +205,14 @@ export default function StaffVisitsClient() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [appointmentQuery, setAppointmentQuery] = useState("");
+  const [visitQuery, setVisitQuery] = useState("");
+  const [appointmentPage, setAppointmentPage] = useState(1);
+  const [visitPage, setVisitPage] = useState(1);
 
   const canManageVisits = hasRole(profile, ["admin", "nurse", "doctor", "psychologist"]);
+  const canManageTreatmentPricing = hasRole(profile, ["admin"]);
+  const pageSize = 4;
 
   const visitMap = useMemo(
     () =>
@@ -205,6 +229,7 @@ export default function StaffVisitsClient() {
       appointments.filter(
         (appointment) =>
           appointment.status !== "cancelled" &&
+          appointment.approval_status === "approved" &&
           (!visitMap.has(appointment.appointment_id) ||
             visitMap.get(appointment.appointment_id)?.visit_id === selectedVisitId),
       ),
@@ -217,6 +242,32 @@ export default function StaffVisitsClient() {
   );
 
   const currentInvoice = selectedVisit?.invoices[0] ?? null;
+  const filteredAppointments = useMemo(
+    () =>
+      appointments.filter((appointment) =>
+        `${appointment.child?.first_name ?? ""} ${appointment.child?.last_name ?? ""} ${appointment.booked_by?.parent?.[0]?.first_name ?? ""} ${appointment.booked_by?.parent?.[0]?.last_name ?? ""} ${appointment.work_schedules?.staff?.first_name ?? ""} ${appointment.work_schedules?.staff?.last_name ?? ""} ${appointment.status ?? ""} ${appointment.approval_status ?? ""}`.toLowerCase().includes(appointmentQuery.toLowerCase()),
+      ),
+    [appointmentQuery, appointments],
+  );
+  const filteredVisits = useMemo(
+    () =>
+      visits.filter((visit) =>
+        `${visit.appointment?.patient?.first_name ?? ""} ${visit.appointment?.patient?.last_name ?? ""} ${visit.appointment?.booked_by?.parent?.[0]?.first_name ?? ""} ${visit.appointment?.booked_by?.parent?.[0]?.last_name ?? ""}`.toLowerCase().includes(visitQuery.toLowerCase()),
+      ),
+    [visitQuery, visits],
+  );
+  const pagedAppointments = useMemo(
+    () =>
+      filteredAppointments.slice(
+        (appointmentPage - 1) * pageSize,
+        appointmentPage * pageSize,
+      ),
+    [appointmentPage, filteredAppointments],
+  );
+  const pagedVisits = useMemo(
+    () => filteredVisits.slice((visitPage - 1) * pageSize, visitPage * pageSize),
+    [filteredVisits, visitPage],
+  );
 
   const selectedAppointment = useMemo(() => {
     const appointmentId = Number(form.appointment_id);
@@ -233,8 +284,10 @@ export default function StaffVisitsClient() {
     return {
       appointment_id: selectedVisit.appointment.appointment_id,
       status: selectedVisit.appointment.status,
+      approval_status: selectedVisit.appointment.approval_status,
       patient_id: selectedVisit.appointment.patient_id,
       child: selectedVisit.appointment.patient,
+      booked_by: selectedVisit.appointment.booked_by,
       work_schedules: selectedVisit.appointment.schedule,
     };
   }, [appointments, form.appointment_id, selectedVisit]);
@@ -324,6 +377,36 @@ export default function StaffVisitsClient() {
     });
   };
 
+  const handleServiceItemChange = (
+    index: number,
+    key: "description" | "qty" | "unit_price",
+    value: string,
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      service_items: prev.service_items.map((item, currentIndex) =>
+        currentIndex === index ? { ...item, [key]: value } : item,
+      ),
+    }));
+  };
+
+  const addServiceItem = () => {
+    setForm((prev) => ({
+      ...prev,
+      service_items: [...prev.service_items, createServiceItem()],
+    }));
+  };
+
+  const removeServiceItem = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      service_items:
+        prev.service_items.length === 1
+          ? [createServiceItem()]
+          : prev.service_items.filter((_, currentIndex) => currentIndex !== index),
+    }));
+  };
+
   const selectVisit = (visit: VisitRecord) => {
     setSelectedVisitId(visit.visit_id);
     setSuccess("");
@@ -351,7 +434,7 @@ export default function StaffVisitsClient() {
     setSuccess("");
 
     try {
-      const payload = buildPayload(form, prescriptionItems);
+      const payload = buildPayload(form, prescriptionItems, canManageTreatmentPricing);
 
       if (selectedVisitId) {
         await api.patch(`/visit/${selectedVisitId}`, payload);
@@ -437,11 +520,22 @@ export default function StaffVisitsClient() {
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
               Start from a booked appointment, or reopen an existing visit for review.
             </Typography>
+            <TextField
+              sx={{ mt: 2.25 }}
+              fullWidth
+              label="Search appointment queue"
+              value={appointmentQuery}
+              onChange={(event) => {
+                setAppointmentQuery(event.target.value);
+                setAppointmentPage(1);
+              }}
+              placeholder="Child, parent, specialist, status"
+            />
             <Stack spacing={1.5} sx={{ mt: 2.25 }}>
               {appointments.length === 0 && (
                 <Typography color="text.secondary">No appointments available.</Typography>
               )}
-              {appointments.map((appointment) => {
+              {pagedAppointments.map((appointment) => {
                 const linkedVisit = visitMap.get(appointment.appointment_id) ?? null;
                 const active = linkedVisit?.visit_id === selectedVisitId;
 
@@ -477,9 +571,19 @@ export default function StaffVisitsClient() {
                           label={linkedVisit ? "Visit saved" : titleCase(appointment.status)}
                           color={linkedVisit ? "success" : appointment.status === "cancelled" ? "error" : "default"}
                         />
+                        <Chip
+                          label={`Approval: ${titleCase(appointment.approval_status || "pending")}`}
+                          color={
+                            appointment.approval_status === "approved"
+                              ? "success"
+                              : appointment.approval_status === "rejected"
+                                ? "error"
+                                : "warning"
+                          }
+                        />
                         <Button
                           variant={linkedVisit ? "outlined" : "contained"}
-                          disabled={appointment.status === "cancelled"}
+                          disabled={appointment.status === "cancelled" || appointment.approval_status !== "approved"}
                           onClick={() => {
                             if (linkedVisit) {
                               selectVisit(linkedVisit);
@@ -489,7 +593,7 @@ export default function StaffVisitsClient() {
                             resetEditor(String(appointment.appointment_id));
                           }}
                         >
-                          {linkedVisit ? "Open record" : "Create visit"}
+                          {linkedVisit ? "Open record" : appointment.approval_status === "approved" ? "Create visit" : "Waiting for approval"}
                         </Button>
                       </Stack>
                     </Box>
@@ -497,15 +601,36 @@ export default function StaffVisitsClient() {
                 );
               })}
             </Stack>
+            {filteredAppointments.length > pageSize && (
+              <Box display="flex" justifyContent="center" sx={{ mt: 2.25 }}>
+                <Pagination
+                  page={appointmentPage}
+                  count={Math.ceil(filteredAppointments.length / pageSize)}
+                  onChange={(_, value) => setAppointmentPage(value)}
+                  color="primary"
+                />
+              </Box>
+            )}
           </DashboardCard>
 
           <DashboardCard>
             <Typography variant="h5">Saved visit records</Typography>
+            <TextField
+              sx={{ mt: 2.25 }}
+              fullWidth
+              label="Search visit records"
+              value={visitQuery}
+              onChange={(event) => {
+                setVisitQuery(event.target.value);
+                setVisitPage(1);
+              }}
+              placeholder="Child or parent name"
+            />
             <Stack spacing={1.5} sx={{ mt: 2.25 }}>
               {visits.length === 0 && (
                 <Typography color="text.secondary">No visit records saved yet.</Typography>
               )}
-              {visits.map((visit) => (
+              {pagedVisits.map((visit) => (
                 <Box
                   key={visit.visit_id}
                   sx={{
@@ -538,6 +663,16 @@ export default function StaffVisitsClient() {
                 </Box>
               ))}
             </Stack>
+            {filteredVisits.length > pageSize && (
+              <Box display="flex" justifyContent="center" sx={{ mt: 2.25 }}>
+                <Pagination
+                  page={visitPage}
+                  count={Math.ceil(filteredVisits.length / pageSize)}
+                  onChange={(_, value) => setVisitPage(value)}
+                  color="primary"
+                />
+              </Box>
+            )}
           </DashboardCard>
         </Stack>
 
@@ -597,6 +732,9 @@ export default function StaffVisitsClient() {
                     </Typography>
                     <Typography color="text.secondary" sx={{ mt: 0.5 }}>
                       Schedule: {formatDate(selectedAppointment.work_schedules?.work_date || null)} | {formatTime(selectedAppointment.work_schedules?.start_time || null)} - {formatTime(selectedAppointment.work_schedules?.end_time || null)}
+                    </Typography>
+                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                      Approval: {titleCase(selectedAppointment.approval_status || "pending")}
                     </Typography>
                   </Box>
                 )}
@@ -707,6 +845,72 @@ export default function StaffVisitsClient() {
                   </Box>
                 </Stack>
 
+                <Divider textAlign="left">Treatment pricing</Divider>
+
+                {!canManageTreatmentPricing && (
+                  <Alert severity="info">
+                    Only admins can set treatment prices. Other staff can still review the invoice.
+                  </Alert>
+                )}
+
+                <Stack spacing={1.5}>
+                  {form.service_items.map((item, index) => (
+                    <Box
+                      key={item.id}
+                      display="grid"
+                      gridTemplateColumns={{ xs: "1fr", md: "1.4fr 0.45fr 0.55fr auto" }}
+                      gap={1.5}
+                      alignItems="center"
+                    >
+                      <TextField
+                        label="Treatment item"
+                        value={item.description}
+                        onChange={(event) =>
+                          handleServiceItemChange(index, "description", event.target.value)
+                        }
+                        disabled={!canManageTreatmentPricing || saving}
+                      />
+                      <TextField
+                        label="Qty"
+                        type="number"
+                        value={item.qty}
+                        onChange={(event) =>
+                          handleServiceItemChange(index, "qty", event.target.value)
+                        }
+                        disabled={!canManageTreatmentPricing || saving}
+                        inputProps={{ min: 1 }}
+                      />
+                      <TextField
+                        label="Unit price"
+                        type="number"
+                        value={item.unit_price}
+                        onChange={(event) =>
+                          handleServiceItemChange(index, "unit_price", event.target.value)
+                        }
+                        disabled={!canManageTreatmentPricing || saving}
+                        inputProps={{ min: 0, step: "0.01" }}
+                      />
+                      <IconButton
+                        aria-label="Remove treatment item"
+                        onClick={() => removeServiceItem(index)}
+                        disabled={!canManageTreatmentPricing || saving}
+                      >
+                        <DeleteOutlineRoundedIcon />
+                      </IconButton>
+                    </Box>
+                  ))}
+                  <Box display="flex" gap={1.25} flexWrap="wrap">
+                    <Button
+                      variant="outlined"
+                      startIcon={<AddRoundedIcon />}
+                      onClick={addServiceItem}
+                      disabled={!canManageTreatmentPricing || saving}
+                    >
+                      Add treatment price
+                    </Button>
+                  </Box>
+                </Stack>
+
                 <Box display="flex" gap={1.25} flexWrap="wrap">
                   <Button type="submit" variant="contained" disabled={!canManageVisits || saving}>
                     {saving ? "Saving..." : selectedVisitId ? "Update record" : "Save record"}
@@ -808,6 +1012,7 @@ function toFormState(visit: VisitRecord): VisitFormState {
     note: visit.vital_signs?.note ?? "",
     diagnoses: visit.diagnoses.map((item) => item.diagnosis_text).filter(Boolean).join("\n"),
     treatment_plans: visit.treatment_plans.map((item) => item.plan_detail).filter(Boolean).join("\n"),
+    service_items: toServiceItemsFormState(visit),
   };
 }
 
@@ -825,7 +1030,11 @@ function toPrescriptionFormState(visit: VisitRecord): PrescriptionFormItem[] {
   }));
 }
 
-function buildPayload(form: VisitFormState, prescriptionItems: PrescriptionFormItem[]) {
+function buildPayload(
+  form: VisitFormState,
+  prescriptionItems: PrescriptionFormItem[],
+  includeServiceItems: boolean,
+) {
   return {
     appointment_id: Number(form.appointment_id),
     visit_date: new Date(form.visit_date).toISOString(),
@@ -845,6 +1054,17 @@ function buildPayload(form: VisitFormState, prescriptionItems: PrescriptionFormI
         drug_id: Number(item.drug_id),
         quantity: Number(item.quantity),
       })),
+    ...(includeServiceItems
+      ? {
+          service_items: form.service_items
+            .filter((item) => item.description.trim())
+            .map((item) => ({
+              description: item.description.trim(),
+              qty: Number(item.qty || 1),
+              unit_price: Number(item.unit_price || 0),
+            })),
+        }
+      : {}),
   };
 }
 
@@ -861,6 +1081,30 @@ function createPrescriptionItem(): PrescriptionFormItem {
     drug_id: "",
     quantity: "1",
   };
+}
+
+function createServiceItem() {
+  return {
+    id: Math.random().toString(36).slice(2, 10),
+    description: "",
+    qty: "1",
+    unit_price: "",
+  };
+}
+
+function toServiceItemsFormState(visit: VisitRecord) {
+  const items = (visit.invoices[0]?.items ?? []).filter((item) => item.item_type === "service");
+
+  if (items.length === 0) {
+    return [createServiceItem()];
+  }
+
+  return items.map((item) => ({
+    id: `service-${item.invoice_item_id}`,
+    description: item.description ?? "",
+    qty: String(item.qty ?? 1),
+    unit_price: String(Number(item.unit_price ?? 0)),
+  }));
 }
 
 function formatDrugLabel(drug: DrugOption) {

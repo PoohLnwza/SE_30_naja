@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Alert,
@@ -8,10 +8,14 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Stack,
-  Typography,
+  Link,
+  TableCell,
+  TableRow,
+  TextField,
 } from '@mui/material';
-import { AppShell, DashboardCard, StatCard } from '@/app/components/app-shell';
+import { AppShell, StatCard } from '@/app/components/app-shell';
+import { PaginatedTableCard } from '@/app/components/paginated-table-card';
+import { SearchSettingsCard } from '@/app/components/search-settings-card';
 import { staffNav } from '@/app/components/navigation';
 import api from '@/lib/api';
 import type { Profile } from '@/lib/access';
@@ -30,6 +34,8 @@ type PendingPayment = {
   visit_date: string | null;
 };
 
+const pageSize = 8;
+
 export default function StaffPaymentPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -37,6 +43,8 @@ export default function StaffPaymentPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
 
   const fetchData = async () => {
     setLoading(true);
@@ -58,8 +66,20 @@ export default function StaffPaymentPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, []);
+
+  const filteredPayments = useMemo(
+    () =>
+      payments.filter((payment) =>
+        `${payment.child_name ?? ''} ${payment.invoice_id} ${payment.method} ${payment.status} ${payment.payment_id}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
+      ),
+    [payments, query],
+  );
+
+  const pagedPayments = filteredPayments.slice((page - 1) * pageSize, page * pageSize);
 
   const handleVerify = async (paymentId: number, action: 'confirmed' | 'rejected') => {
     const label = action === 'confirmed' ? 'confirm' : 'reject';
@@ -68,7 +88,7 @@ export default function StaffPaymentPage() {
     setProcessing(paymentId);
     try {
       await api.patch(`/payment/${paymentId}/verify`, { action });
-      fetchData();
+      await fetchData();
     } catch (err: any) {
       const message = err?.response?.data?.message || `Unable to ${label} payment`;
       window.alert(Array.isArray(message) ? message.join(', ') : message);
@@ -80,7 +100,7 @@ export default function StaffPaymentPage() {
   return (
     <AppShell
       title="Payment Verification"
-      subtitle="Review and verify pending payment slips from parents."
+      subtitle="Keep slip review compact at the top, then verify each submitted payment from the table below."
       navTitle="Guardian Care"
       navItems={staffNav(profile)}
       badge="Staff"
@@ -94,11 +114,17 @@ export default function StaffPaymentPage() {
     >
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-      <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'repeat(2, 1fr)' }} gap={2} mb={3}>
-        <StatCard label="Pending verifications" value={payments.length} />
+      <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'repeat(3, 1fr)' }} gap={2} mb={3}>
+        <StatCard label="Pending payments" value={payments.length} helper="Rows waiting for staff review" />
         <StatCard
-          label="Total pending amount"
-          value={formatMoney(payments.reduce((sum, p) => sum + Number(p.amount), 0))}
+          label="Pending amount"
+          value={formatMoney(payments.reduce((sum, payment) => sum + Number(payment.amount), 0))}
+          helper="Combined amount from unverified slips"
+        />
+        <StatCard
+          label="With slip"
+          value={payments.filter((payment) => Boolean(payment.slip_image)).length}
+          helper="Rows that already include uploaded evidence"
         />
       </Box>
 
@@ -107,84 +133,100 @@ export default function StaffPaymentPage() {
           <CircularProgress />
         </Box>
       ) : (
-        <Stack spacing={2.5}>
-          {payments.length === 0 ? (
-            <DashboardCard>
-              <Typography variant="h5">No pending payments</Typography>
-              <Typography color="text.secondary" sx={{ mt: 1 }}>
-                All payments have been verified. Check back later.
-              </Typography>
-            </DashboardCard>
-          ) : (
-            payments.map((payment) => (
-              <DashboardCard key={payment.payment_id}>
-                <Box display="flex" justifyContent="space-between" gap={2} flexWrap="wrap">
-                  <Box flex={1}>
-                    <Typography variant="h6">
-                      {payment.child_name || 'Unknown'} — Invoice #{payment.invoice_id}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                      Amount: {formatMoney(Number(payment.amount))}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                      Invoice total: {formatMoney(Number(payment.invoice_total ?? 0))}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                      Payment date: {formatDate(payment.payment_date)}
-                    </Typography>
-                    {payment.visit_date && (
-                      <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                        Visit date: {formatDate(payment.visit_date)}
-                      </Typography>
-                    )}
-                    {payment.slip_image && (
-                      <Box sx={{ mt: 1.5 }}>
-                        <Typography variant="body2" color="text.secondary" mb={0.5}>
-                          Payment slip:
-                        </Typography>
-                        <Box
-                          component="img"
-                          src={payment.slip_image}
-                          alt="Payment slip"
-                          sx={{
-                            maxWidth: 300,
-                            width: '100%',
-                            borderRadius: 2,
-                            border: '1px solid',
-                            borderColor: 'divider',
-                          }}
-                        />
-                      </Box>
-                    )}
-                    {!payment.slip_image && (
-                      <Chip label="No slip uploaded" size="small" color="warning" sx={{ mt: 1 }} />
-                    )}
-                  </Box>
+        <>
+          <SearchSettingsCard description="Search by child, invoice, payment method, or payment id before verifying the row you need.">
+            <Box
+              display="grid"
+              gridTemplateColumns={{ xs: '1fr', md: 'minmax(0, 380px)' }}
+              gap={2}
+            >
+              <TextField
+                label="Search payments"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Child name, invoice id, method, payment id"
+                fullWidth
+              />
+            </Box>
+          </SearchSettingsCard>
 
-                  <Stack spacing={1} alignItems="flex-end" justifyContent="flex-start">
-                    <Chip label="Pending" color="warning" />
-                    <Button
-                      variant="contained"
-                      color="success"
-                      disabled={processing === payment.payment_id}
-                      onClick={() => handleVerify(payment.payment_id, 'confirmed')}
-                    >
-                      Confirm
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      disabled={processing === payment.payment_id}
-                      onClick={() => handleVerify(payment.payment_id, 'rejected')}
-                    >
-                      Reject
-                    </Button>
-                  </Stack>
-                </Box>
-              </DashboardCard>
-            ))
-          )}
-        </Stack>
+          <Box sx={{ mt: 2.5 }}>
+            <PaginatedTableCard
+              title="Pending payment table"
+              subtitle="Open the slip only when needed, then confirm or reject directly from the same row."
+              page={page}
+              pageCount={Math.max(1, Math.ceil(filteredPayments.length / pageSize))}
+              onPageChange={setPage}
+              empty={filteredPayments.length === 0}
+              emptyLabel="No pending payments match the current search."
+              header={
+                <TableRow>
+                  <TableCell>Payment ID</TableCell>
+                  <TableCell>Child</TableCell>
+                  <TableCell>Invoice</TableCell>
+                  <TableCell align="right">Amount</TableCell>
+                  <TableCell align="right">Invoice total</TableCell>
+                  <TableCell>Payment date</TableCell>
+                  <TableCell>Slip</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              }
+              body={
+                <>
+                  {pagedPayments.map((payment) => (
+                    <TableRow key={payment.payment_id} hover>
+                      <TableCell>#{payment.payment_id}</TableCell>
+                      <TableCell>{payment.child_name || '-'}</TableCell>
+                      <TableCell>
+                        <Box>
+                          #{payment.invoice_id}
+                          {payment.visit_date ? ` | Visit ${formatDate(payment.visit_date)}` : ''}
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">{formatMoney(Number(payment.amount))}</TableCell>
+                      <TableCell align="right">{formatMoney(Number(payment.invoice_total ?? 0))}</TableCell>
+                      <TableCell>{formatDate(payment.payment_date)}</TableCell>
+                      <TableCell>
+                        {payment.slip_image ? (
+                          <Link href={payment.slip_image} target="_blank" rel="noreferrer" underline="hover">
+                            Open slip
+                          </Link>
+                        ) : (
+                          <Chip label="No slip" size="small" color="warning" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Box display="flex" gap={1} flexWrap="wrap">
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            disabled={processing === payment.payment_id}
+                            onClick={() => handleVerify(payment.payment_id, 'confirmed')}
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            disabled={processing === payment.payment_id}
+                            onClick={() => handleVerify(payment.payment_id, 'rejected')}
+                          >
+                            Reject
+                          </Button>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </>
+              }
+            />
+          </Box>
+        </>
       )}
     </AppShell>
   );

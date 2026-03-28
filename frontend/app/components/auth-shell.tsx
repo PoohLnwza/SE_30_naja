@@ -77,7 +77,7 @@ export function AuthShell({
                 What is improved
               </Typography>
               <Typography variant="h5" sx={{ mt: 1 }}>
-                Better layout separation, clearer side navigation, and lighter visual weight.
+                  รหัสทุก user ใช้ 111111.
               </Typography>
             </Paper>
             <Box

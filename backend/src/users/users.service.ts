@@ -611,6 +611,282 @@ export class UsersService {
     };
   }
 
+  async getStaffReports(currentUser: {
+    user_id: number;
+    user_type: string;
+    roleNames?: string[];
+    staffRole?: string | null;
+  }) {
+    if (currentUser.user_type !== 'staff') {
+      throw new ForbiddenException('Staff access required');
+    }
+
+    const [staff, parents, drugs, appointments, visits] = await Promise.all([
+      this.prisma.staff.findMany({
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              username: true,
+              is_active: true,
+            },
+          },
+        },
+        orderBy: [{ first_name: 'asc' }, { last_name: 'asc' }],
+      }),
+      this.prisma.parent.findMany({
+        where: { deleted_at: null },
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              username: true,
+              is_active: true,
+            },
+          },
+          child_parent: {
+            include: {
+              child: {
+                select: {
+                  child_id: true,
+                  first_name: true,
+                  last_name: true,
+                  birth_date: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ first_name: 'asc' }, { last_name: 'asc' }],
+      }),
+      this.prisma.drug.findMany({
+        orderBy: [{ name: 'asc' }, { dose: 'asc' }],
+      }),
+      this.prisma.appointments.findMany({
+        where: { deleted_at: null },
+        include: {
+          child: {
+            select: {
+              child_id: true,
+              first_name: true,
+              last_name: true,
+            },
+          },
+          booked_by: {
+            select: {
+              user_id: true,
+              username: true,
+              parent: {
+                select: {
+                  parent_id: true,
+                  first_name: true,
+                  last_name: true,
+                },
+              },
+            },
+          },
+          room: {
+            select: {
+              room_id: true,
+              room_name: true,
+            },
+          },
+          work_schedules: {
+            select: {
+              schedule_id: true,
+              work_date: true,
+              start_time: true,
+              end_time: true,
+              slot_status: true,
+              staff: {
+                select: {
+                  staff_id: true,
+                  first_name: true,
+                  last_name: true,
+                  role: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ created_at: 'desc' }],
+      }),
+      this.prisma.visit.findMany({
+        where: { deleted_at: null },
+        include: {
+          appointments: {
+            include: {
+              child: {
+                select: {
+                  child_id: true,
+                  first_name: true,
+                  last_name: true,
+                },
+              },
+              booked_by: {
+                select: {
+                  user_id: true,
+                  username: true,
+                  parent: {
+                    select: {
+                      parent_id: true,
+                      first_name: true,
+                      last_name: true,
+                    },
+                  },
+                },
+              },
+              work_schedules: {
+                include: {
+                  staff: {
+                    select: {
+                      staff_id: true,
+                      first_name: true,
+                      last_name: true,
+                      role: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          prescription: {
+            include: {
+              prescription_item: {
+                include: {
+                  drug: true,
+                },
+                orderBy: { prescription_item_id: 'asc' },
+              },
+            },
+            orderBy: { prescription_id: 'asc' },
+          },
+          invoice: {
+            where: { deleted_at: null },
+            include: {
+              invoice_item: {
+                orderBy: { invoice_item_id: 'asc' },
+              },
+              payment: {
+                orderBy: { payment_id: 'asc' },
+              },
+            },
+            orderBy: { invoice_id: 'desc' },
+          },
+        },
+        orderBy: [{ visit_date: 'desc' }, { visit_id: 'desc' }],
+      }),
+    ]);
+
+    return {
+      staff: staff.map((item) => ({
+        staff_id: item.staff_id,
+        username: item.users.username,
+        first_name: item.first_name,
+        last_name: item.last_name,
+        role: this.toPublicRoleName(item.role),
+        status: item.status,
+        is_active: item.users.is_active,
+      })),
+      parents: parents.map((item) => ({
+        parent_id: item.parent_id,
+        username: item.users.username,
+        first_name: item.first_name,
+        last_name: item.last_name,
+        phone: item.phone,
+        is_active: item.users.is_active,
+        children: item.child_parent
+          .map((link) => link.child)
+          .filter((child): child is NonNullable<typeof child> => Boolean(child)),
+      })),
+      drugs: drugs.map((item) => ({
+        drug_id: item.drug_id,
+        name: item.name,
+        dose: item.dose,
+        unit_price: item.unit_price,
+      })),
+      appointments: appointments.map((item) => ({
+        appointment_id: item.appointment_id,
+        status: item.status,
+        approval_status: item.approval_status,
+        created_at: item.created_at,
+        patient: item.child,
+        parent: item.booked_by?.parent?.[0]
+          ? {
+              parent_id: item.booked_by.parent[0].parent_id,
+              first_name: item.booked_by.parent[0].first_name,
+              last_name: item.booked_by.parent[0].last_name,
+            }
+          : null,
+        room: item.room,
+        schedule: item.work_schedules
+          ? {
+              schedule_id: item.work_schedules.schedule_id,
+              work_date: item.work_schedules.work_date,
+              start_time: item.work_schedules.start_time,
+              end_time: item.work_schedules.end_time,
+              slot_status: item.work_schedules.slot_status,
+              staff: item.work_schedules.staff
+                ? {
+                    staff_id: item.work_schedules.staff.staff_id,
+                    first_name: item.work_schedules.staff.first_name,
+                    last_name: item.work_schedules.staff.last_name,
+                    role: this.toPublicRoleName(item.work_schedules.staff.role),
+                  }
+                : null,
+            }
+          : null,
+      })),
+      visits: visits.map((visit) => {
+        const prescriptionItems = visit.prescription.flatMap((prescription) =>
+          prescription.prescription_item.map((item) => ({
+            prescription_id: prescription.prescription_id,
+            prescription_item_id: item.prescription_item_id,
+            quantity: item.quantity,
+            drug_name: item.drug?.name ?? null,
+            drug_dose: item.drug?.dose ?? null,
+          })),
+        );
+        const latestInvoice = visit.invoice[0] ?? null;
+
+        return {
+          visit_id: visit.visit_id,
+          visit_date: visit.visit_date,
+          appointment_id: visit.appointment_id,
+          patient: visit.appointments?.child ?? null,
+          parent: visit.appointments?.booked_by?.parent?.[0]
+            ? {
+                parent_id: visit.appointments.booked_by.parent[0].parent_id,
+                first_name: visit.appointments.booked_by.parent[0].first_name,
+                last_name: visit.appointments.booked_by.parent[0].last_name,
+              }
+            : null,
+          staff: visit.appointments?.work_schedules?.staff
+            ? {
+                staff_id: visit.appointments.work_schedules.staff.staff_id,
+                first_name: visit.appointments.work_schedules.staff.first_name,
+                last_name: visit.appointments.work_schedules.staff.last_name,
+                role: this.toPublicRoleName(
+                  visit.appointments.work_schedules.staff.role,
+                ),
+              }
+            : null,
+          prescription_items: prescriptionItems,
+          prescription_count: prescriptionItems.length,
+          latest_invoice: latestInvoice
+            ? {
+                invoice_id: latestInvoice.invoice_id,
+                total_amount: latestInvoice.total_amount,
+                status: latestInvoice.status,
+                item_count: latestInvoice.invoice_item.length,
+                payment_count: latestInvoice.payment.length,
+              }
+            : null,
+        };
+      }),
+    };
+  }
+
   private hasRole(
     user: { roleNames?: string[]; staffRole?: string | null },
     roles: string[],

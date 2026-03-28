@@ -128,7 +128,11 @@ export default function BookAppointmentPage() {
           <Button variant="outlined" onClick={() => router.back()}>
             Back
           </Button>
-          <Button variant="contained" onClick={handleConfirmBooking} disabled={submitting}>
+          <Button
+            variant="contained"
+            onClick={handleConfirmBooking}
+            disabled={submitting || context.children.length === 0}
+          >
             {submitting ? 'Booking...' : 'Confirm booking'}
           </Button>
         </>
@@ -160,9 +164,13 @@ export default function BookAppointmentPage() {
           <DashboardCard>
             <Typography variant="h5">Booking details</Typography>
             <Stack spacing={2.25} sx={{ mt: 2.25 }}>
+              <Alert severity="info">
+                ทุกการจองต้องได้รับการยืนยันจาก admin ก่อน และต้องจองล่วงหน้าอย่างน้อย 1 ชั่วโมง
+              </Alert>
+
               {context.children.length === 0 ? (
-                <Alert severity="info">
-                  ยังไม่มีข้อมูลเด็กในระบบ — สามารถจองได้เลย เจ้าหน้าที่จะเพิ่มข้อมูลเด็กในวันที่มาคลีนิค
+                <Alert severity="warning">
+                  ยังไม่พบข้อมูลเด็กในบัญชีนี้ กรุณาให้แอดมินช่วยผูกข้อมูลเด็กก่อน หรือสมัครใหม่ด้วยข้อมูลผู้ปกครองและเด็กให้ครบ
                 </Alert>
               ) : (
                 <TextField

@@ -2,8 +2,11 @@ import 'dotenv/config';
 import {
   Prisma,
   PrismaClient,
+  approval_status,
   appointment_status,
+  invoice_status,
   item_type,
+  payment_status,
   severity_level,
   slot_status,
   staff_role,
@@ -27,6 +30,20 @@ const dateAtUtc = (
 ) => new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
 const timeAtUtc = (hour: number, minute = 0) =>
   new Date(Date.UTC(1970, 0, 1, hour, minute, 0));
+const startOfUtcDay = (date: Date) =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+const todayUtc = startOfUtcDay(new Date());
+const daysFromToday = (days: number, hour = 0, minute = 0) =>
+  new Date(
+    Date.UTC(
+      todayUtc.getUTCFullYear(),
+      todayUtc.getUTCMonth(),
+      todayUtc.getUTCDate() + days,
+      hour,
+      minute,
+      0,
+    ),
+  );
 
 type RoleName = 'admin' | 'parent' | 'doctor' | 'nurse' | 'psychologist';
 
@@ -64,7 +81,7 @@ async function clearDatabase() {
 async function main() {
   await clearDatabase();
 
-  const passwordHash = await bcrypt.hash('Password123!', 10);
+  const passwordHash = await bcrypt.hash('111111', 10);
 
   const roleMap = Object.fromEntries(
     await Promise.all(
@@ -202,44 +219,50 @@ async function main() {
 
   const parentProfiles = [
     {
-      username: 'parent.somchai',
+      username: '1103700000011',
       firstName: 'Somchai',
       lastName: 'Jaidee',
+      nationalId: '1103700000011',
       phone: '0812345678',
       loginAt: dateAtUtc(2026, 3, 15, 20, 10),
     },
     {
-      username: 'parent.suda',
+      username: '1103700000029',
       firstName: 'Suda',
       lastName: 'Preecha',
+      nationalId: '1103700000029',
       phone: '0823456789',
       loginAt: dateAtUtc(2026, 3, 16, 9, 5),
     },
     {
-      username: 'parent.araya',
+      username: '1103700000037',
       firstName: 'Araya',
       lastName: 'Thonglor',
+      nationalId: '1103700000037',
       phone: '0834567890',
       loginAt: dateAtUtc(2026, 3, 14, 21, 40),
     },
     {
-      username: 'parent.kittipong',
+      username: '1103700000045',
       firstName: 'Kittipong',
       lastName: 'Rattanakorn',
+      nationalId: '1103700000045',
       phone: '0845678901',
       loginAt: dateAtUtc(2026, 3, 12, 18, 25),
     },
     {
-      username: 'parent.mali',
+      username: '1103700000053',
       firstName: 'Mali',
       lastName: 'Phrommatat',
+      nationalId: '1103700000053',
       phone: '0856789012',
       loginAt: dateAtUtc(2026, 3, 13, 12, 55),
     },
     {
-      username: 'parent.nattapong',
+      username: '1103700000061',
       firstName: 'Nattapong',
       lastName: 'Suwan',
+      nationalId: '1103700000061',
       phone: '0867890123',
       loginAt: dateAtUtc(2026, 3, 11, 7, 40),
     },
@@ -258,6 +281,7 @@ async function main() {
       data: {
         first_name: profile.firstName,
         last_name: profile.lastName,
+        national_id: profile.nationalId,
         phone: profile.phone,
         user_id: user.user_id,
       },
@@ -271,6 +295,7 @@ async function main() {
       data: {
         first_name: 'Kawin',
         last_name: 'Jaidee',
+        national_id: '2103700000018',
         birth_date: dateAtUtc(2018, 5, 12),
       },
     }),
@@ -278,6 +303,7 @@ async function main() {
       data: {
         first_name: 'Lalin',
         last_name: 'Jaidee',
+        national_id: '2103700000026',
         birth_date: dateAtUtc(2020, 11, 3),
       },
     }),
@@ -285,6 +311,7 @@ async function main() {
       data: {
         first_name: 'Thanwa',
         last_name: 'Preecha',
+        national_id: '2103700000034',
         birth_date: dateAtUtc(2017, 8, 22),
       },
     }),
@@ -292,6 +319,7 @@ async function main() {
       data: {
         first_name: 'Maysa',
         last_name: 'Thonglor',
+        national_id: '2103700000042',
         birth_date: dateAtUtc(2019, 2, 14),
       },
     }),
@@ -299,6 +327,7 @@ async function main() {
       data: {
         first_name: 'Punn',
         last_name: 'Rattanakorn',
+        national_id: '2103700000059',
         birth_date: dateAtUtc(2016, 12, 9),
       },
     }),
@@ -306,6 +335,7 @@ async function main() {
       data: {
         first_name: 'Namon',
         last_name: 'Phrommatat',
+        national_id: '2103700000067',
         birth_date: dateAtUtc(2021, 6, 1),
       },
     }),
@@ -313,6 +343,7 @@ async function main() {
       data: {
         first_name: 'Fahsai',
         last_name: 'Suwan',
+        national_id: '2103700000075',
         birth_date: dateAtUtc(2018, 9, 30),
       },
     }),
@@ -320,6 +351,7 @@ async function main() {
       data: {
         first_name: 'Tonnam',
         last_name: 'Suwan',
+        national_id: '2103700000083',
         birth_date: dateAtUtc(2022, 1, 18),
       },
     }),
@@ -357,7 +389,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[1].staff_id,
-        work_date: dateAtUtc(2026, 3, 12),
+        work_date: daysFromToday(1),
         start_time: timeAtUtc(9, 0),
         end_time: timeAtUtc(10, 0),
         slot_status: slot_status.booked,
@@ -366,7 +398,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[2].staff_id,
-        work_date: dateAtUtc(2026, 3, 13),
+        work_date: daysFromToday(2),
         start_time: timeAtUtc(10, 30),
         end_time: timeAtUtc(11, 30),
         slot_status: slot_status.booked,
@@ -375,7 +407,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[5].staff_id,
-        work_date: dateAtUtc(2026, 3, 14),
+        work_date: daysFromToday(3),
         start_time: timeAtUtc(13, 0),
         end_time: timeAtUtc(14, 0),
         slot_status: slot_status.booked,
@@ -384,7 +416,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[3].staff_id,
-        work_date: dateAtUtc(2026, 3, 16),
+        work_date: daysFromToday(4),
         start_time: timeAtUtc(9, 0),
         end_time: timeAtUtc(9, 45),
         slot_status: slot_status.booked,
@@ -393,7 +425,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[1].staff_id,
-        work_date: dateAtUtc(2026, 3, 17),
+        work_date: daysFromToday(5),
         start_time: timeAtUtc(14, 0),
         end_time: timeAtUtc(15, 0),
         slot_status: slot_status.booked,
@@ -402,7 +434,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[6].staff_id,
-        work_date: dateAtUtc(2026, 3, 18),
+        work_date: daysFromToday(6),
         start_time: timeAtUtc(10, 0),
         end_time: timeAtUtc(11, 0),
         slot_status: slot_status.booked,
@@ -411,7 +443,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[2].staff_id,
-        work_date: dateAtUtc(2026, 3, 19),
+        work_date: daysFromToday(1),
         start_time: timeAtUtc(9, 30),
         end_time: timeAtUtc(10, 30),
         slot_status: slot_status.available,
@@ -420,7 +452,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[5].staff_id,
-        work_date: dateAtUtc(2026, 3, 20),
+        work_date: daysFromToday(2),
         start_time: timeAtUtc(15, 0),
         end_time: timeAtUtc(16, 0),
         slot_status: slot_status.available,
@@ -429,7 +461,7 @@ async function main() {
     prisma.work_schedules.create({
       data: {
         staff_id: staffRecords[4].staff_id,
-        work_date: dateAtUtc(2026, 3, 21),
+        work_date: daysFromToday(3),
         start_time: timeAtUtc(8, 30),
         end_time: timeAtUtc(12, 0),
         slot_status: slot_status.blocked,
@@ -443,8 +475,10 @@ async function main() {
         patient_id: children[0].child_id,
         schedule_id: schedules[0].schedule_id,
         room_id: rooms[0].room_id,
+        booked_by_user_id: parentRecords[0].user_id,
         status: appointment_status.completed,
-        created_at: dateAtUtc(2026, 3, 10, 10, 5),
+        approval_status: approval_status.approved,
+        created_at: daysFromToday(0, 10, 5),
       },
     }),
     prisma.appointments.create({
@@ -452,8 +486,10 @@ async function main() {
         patient_id: children[2].child_id,
         schedule_id: schedules[1].schedule_id,
         room_id: rooms[1].room_id,
+        booked_by_user_id: parentRecords[1].user_id,
         status: appointment_status.completed,
-        created_at: dateAtUtc(2026, 3, 11, 14, 20),
+        approval_status: approval_status.approved,
+        created_at: daysFromToday(0, 14, 20),
       },
     }),
     prisma.appointments.create({
@@ -461,8 +497,10 @@ async function main() {
         patient_id: children[3].child_id,
         schedule_id: schedules[2].schedule_id,
         room_id: rooms[2].room_id,
+        booked_by_user_id: parentRecords[2].user_id,
         status: appointment_status.completed,
-        created_at: dateAtUtc(2026, 3, 12, 9, 45),
+        approval_status: approval_status.approved,
+        created_at: daysFromToday(0, 9, 45),
       },
     }),
     prisma.appointments.create({
@@ -470,8 +508,10 @@ async function main() {
         patient_id: children[4].child_id,
         schedule_id: schedules[3].schedule_id,
         room_id: rooms[0].room_id,
+        booked_by_user_id: parentRecords[3].user_id,
         status: appointment_status.scheduled,
-        created_at: dateAtUtc(2026, 3, 15, 8, 30),
+        approval_status: approval_status.pending,
+        created_at: daysFromToday(0, 8, 30),
       },
     }),
     prisma.appointments.create({
@@ -479,8 +519,10 @@ async function main() {
         patient_id: children[6].child_id,
         schedule_id: schedules[4].schedule_id,
         room_id: rooms[3].room_id,
+        booked_by_user_id: parentRecords[5].user_id,
         status: appointment_status.scheduled,
-        created_at: dateAtUtc(2026, 3, 16, 7, 50),
+        approval_status: approval_status.pending,
+        created_at: daysFromToday(0, 7, 50),
       },
     }),
     prisma.appointments.create({
@@ -488,8 +530,10 @@ async function main() {
         patient_id: children[5].child_id,
         schedule_id: schedules[5].schedule_id,
         room_id: rooms[2].room_id,
+        booked_by_user_id: parentRecords[4].user_id,
         status: appointment_status.cancelled,
-        created_at: dateAtUtc(2026, 3, 14, 16, 35),
+        approval_status: approval_status.rejected,
+        created_at: daysFromToday(0, 16, 35),
       },
     }),
   ]);
@@ -892,6 +936,111 @@ async function main() {
         unit_price: decimal(15.75),
       },
     }),
+    prisma.drug.create({
+      data: {
+        name: 'Risperidone',
+        dose: '0.5 mg tablet',
+        unit_price: decimal(11.5),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Sertraline',
+        dose: '25 mg tablet',
+        unit_price: decimal(14.25),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Aripiprazole',
+        dose: '5 mg tablet',
+        unit_price: decimal(19.75),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Atomoxetine',
+        dose: '18 mg capsule',
+        unit_price: decimal(17.25),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Clonidine',
+        dose: '100 mcg tablet',
+        unit_price: decimal(9.5),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Escitalopram',
+        dose: '5 mg tablet',
+        unit_price: decimal(13.25),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Hydroxyzine',
+        dose: '10 mg tablet',
+        unit_price: decimal(8.75),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Quetiapine',
+        dose: '25 mg tablet',
+        unit_price: decimal(16.5),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Olanzapine',
+        dose: '2.5 mg tablet',
+        unit_price: decimal(18.0),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Lamotrigine',
+        dose: '25 mg tablet',
+        unit_price: decimal(12.75),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Valproate',
+        dose: '200 mg tablet',
+        unit_price: decimal(10.8),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Diazepam',
+        dose: '2 mg tablet',
+        unit_price: decimal(7.9),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Buspirone',
+        dose: '5 mg tablet',
+        unit_price: decimal(11.2),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Imipramine',
+        dose: '10 mg tablet',
+        unit_price: decimal(9.9),
+      },
+    }),
+    prisma.drug.create({
+      data: {
+        name: 'Propranolol',
+        dose: '10 mg tablet',
+        unit_price: decimal(6.4),
+      },
+    }),
   ]);
 
   const prescription1 = await prisma.prescription.create({
@@ -953,18 +1102,21 @@ async function main() {
     data: {
       visit_id: visit1.visit_id,
       total_amount: decimal(755),
+      status: invoice_status.paid,
     },
   });
   const invoice2 = await prisma.invoice.create({
     data: {
       visit_id: visit2.visit_id,
       total_amount: decimal(510),
+      status: invoice_status.paid,
     },
   });
   const invoice3 = await prisma.invoice.create({
     data: {
       visit_id: visit3.visit_id,
       total_amount: decimal(730.5),
+      status: invoice_status.partially_paid,
     },
   });
 
@@ -1059,6 +1211,10 @@ async function main() {
       data: {
         invoice_id: invoice1.invoice_id,
         amount: decimal(755),
+        method: 'qr_code',
+        status: payment_status.confirmed,
+        confirmed_by: adminStaff.staff_id,
+        confirmed_at: dateAtUtc(2026, 3, 12, 11, 5),
         payment_date: dateAtUtc(2026, 3, 12, 11, 0),
       },
     }),
@@ -1066,6 +1222,10 @@ async function main() {
       data: {
         invoice_id: invoice2.invoice_id,
         amount: decimal(510),
+        method: 'bank_transfer',
+        status: payment_status.confirmed,
+        confirmed_by: adminStaff.staff_id,
+        confirmed_at: dateAtUtc(2026, 3, 13, 11, 50),
         payment_date: dateAtUtc(2026, 3, 13, 11, 40),
       },
     }),
@@ -1073,10 +1233,277 @@ async function main() {
       data: {
         invoice_id: invoice3.invoice_id,
         amount: decimal(350),
+        method: 'qr_code',
+        status: payment_status.pending,
+        slip_image: 'https://example.com/slips/payment-3.png',
         payment_date: dateAtUtc(2026, 3, 14, 15, 10),
       },
     }),
   ]);
+
+  const childOwnerMap = new Map(
+    childParentLinks.map(([child, parent]) => [child.child_id, parent]),
+  );
+
+  const extraSchedules = await Promise.all(
+    Array.from({ length: 36 }, (_, index) => {
+      const staffPool = [staffRecords[1], staffRecords[2], staffRecords[5], staffRecords[6]];
+      const timeSlots = [
+        [8, 30],
+        [9, 30],
+        [10, 30],
+        [13, 0],
+        [14, 0],
+        [15, 0],
+      ] as const;
+      const [hour, minute] = timeSlots[index % timeSlots.length];
+      const statusCycle = [slot_status.booked, slot_status.available, slot_status.booked];
+      const assignedStatus =
+        index % 11 === 0 ? slot_status.blocked : statusCycle[index % statusCycle.length];
+      const workDateOffset = 7 + Math.floor(index / 3);
+
+      return prisma.work_schedules.create({
+        data: {
+          staff_id: staffPool[index % staffPool.length].staff_id,
+          work_date: daysFromToday(workDateOffset),
+          start_time: timeAtUtc(hour, minute),
+          end_time: timeAtUtc(hour + 1, minute),
+          slot_status: assignedStatus,
+        },
+      });
+    }),
+  );
+  schedules.push(...extraSchedules);
+
+  const extraAppointments = await Promise.all(
+    extraSchedules
+      .filter((schedule) => schedule.slot_status !== slot_status.blocked)
+      .slice(0, 24)
+      .map((schedule, index) => {
+        const child = children[index % children.length];
+        const owner = childOwnerMap.get(child.child_id)!;
+        const statusRoll = index % 6;
+        const status =
+          statusRoll <= 2
+            ? appointment_status.completed
+            : statusRoll <= 4
+              ? appointment_status.scheduled
+              : appointment_status.cancelled;
+        const approval =
+          status === appointment_status.cancelled
+            ? approval_status.rejected
+            : status === appointment_status.completed || index % 2 === 0
+              ? approval_status.approved
+              : approval_status.pending;
+
+        return prisma.appointments.create({
+          data: {
+            patient_id: child.child_id,
+            schedule_id: schedule.schedule_id,
+            room_id: rooms[index % rooms.length].room_id,
+            booked_by_user_id: owner.user_id,
+            status,
+            approval_status: approval,
+            created_at: daysFromToday(1 + Math.floor(index / 2), 8 + (index % 7), 10),
+          },
+        });
+      }),
+  );
+  appointments.push(...extraAppointments);
+
+  const completedExtraAppointments = extraAppointments.filter(
+    (appointment) =>
+      appointment.status === appointment_status.completed &&
+      appointment.approval_status === approval_status.approved,
+  );
+
+  const diagnosisPool = [
+    'Attention regulation remains inconsistent across morning routines.',
+    'Emotional outbursts increase during homework and transitions.',
+    'Sleep onset remains delayed with daytime fatigue.',
+    'Anxiety symptoms increase before school presentations.',
+    'Sensory sensitivity affects classroom participation.',
+    'Social communication difficulties require structured coaching.',
+  ];
+  const treatmentPool = [
+    'Review parent behavior log and reinforce consistent bedtime routine.',
+    'Coordinate with school counselor and update classroom accommodation plan.',
+    'Continue weekly psychotherapy and home coping practice.',
+    'Schedule medication review in 4 weeks with symptom tracker.',
+    'Encourage sensory breaks and structured visual routine at home.',
+    'Provide parent coaching session focused on transitions and regulation.',
+  ];
+  const servicePool = [
+    'Child psychiatry follow-up consultation',
+    'Developmental behavior review',
+    'Psychology therapy session',
+    'Medication counseling and monitoring',
+    'Family counseling session',
+    'Functional behavior planning review',
+  ];
+  const assessmentPool = [
+    'Executive function screening',
+    'Behavior rating review',
+    'Anxiety symptom review',
+    'Sleep and mood monitoring review',
+  ];
+
+  for (const [index, appointment] of completedExtraAppointments.entries()) {
+    const visitDate = new Date(
+      appointment.created_at
+        ? new Date(appointment.created_at).getTime() + 1000 * 60 * (45 + index * 3)
+        : daysFromToday(10 + index, 9, 0).getTime(),
+    );
+
+    const visit = await prisma.visit.create({
+      data: {
+        appointment_id: appointment.appointment_id,
+        visit_date: visitDate,
+      },
+    });
+
+    await prisma.vital_signs.create({
+      data: {
+        visit_id: visit.visit_id,
+        weight_kg: decimal(20.5 + index * 0.7),
+        height_cm: decimal(112 + index * 1.4),
+        bp_systolic: 94 + (index % 9),
+        bp_diastolic: 58 + (index % 7),
+        heart_rate: 80 + (index % 14),
+        note: `Follow-up visit ${index + 1}: parent reports gradual improvement with some ongoing concerns.`,
+        created_at: visitDate,
+      },
+    });
+
+    await prisma.diagnose.createMany({
+      data: [
+        {
+          visit_id: visit.visit_id,
+          diagnosis_text: diagnosisPool[index % diagnosisPool.length],
+        },
+        {
+          visit_id: visit.visit_id,
+          diagnosis_text: diagnosisPool[(index + 2) % diagnosisPool.length],
+        },
+      ],
+    });
+
+    await prisma.treatment_plan.createMany({
+      data: [
+        {
+          visit_id: visit.visit_id,
+          plan_detail: treatmentPool[index % treatmentPool.length],
+        },
+        {
+          visit_id: visit.visit_id,
+          plan_detail: treatmentPool[(index + 3) % treatmentPool.length],
+        },
+      ],
+    });
+
+    const prescription = await prisma.prescription.create({
+      data: { visit_id: visit.visit_id },
+    });
+
+    const prescribedDrugs = [drugs[index % drugs.length], drugs[(index + 4) % drugs.length]];
+    const prescribedQuantities = [14 + (index % 3) * 7, 10 + (index % 4) * 5];
+
+    const extraPrescriptionItems = await Promise.all(
+      prescribedDrugs.map((drug, itemIndex) =>
+        prisma.prescription_item.create({
+          data: {
+            prescription_id: prescription.prescription_id,
+            drug_id: drug.drug_id,
+            quantity: prescribedQuantities[itemIndex],
+          },
+        }),
+      ),
+    );
+
+    await prisma.dispense.create({
+      data: {
+        prescription_id: prescription.prescription_id,
+        staff_id: staffRecords[3].staff_id,
+      },
+    });
+
+    const serviceAmount = 240 + index * 12;
+    const assessmentAmount = 120 + (index % assessmentPool.length) * 35;
+    const drugAmount = extraPrescriptionItems.reduce((sum, item, itemIndex) => {
+      const price = Number(prescribedDrugs[itemIndex].unit_price);
+      return sum + price * Number(item.quantity ?? 0);
+    }, 0);
+    const invoiceTotal = serviceAmount + assessmentAmount + drugAmount;
+    const invoiceStatusCycle = [
+      invoice_status.paid,
+      invoice_status.partially_paid,
+      invoice_status.unpaid,
+    ];
+    const invoiceStatus = invoiceStatusCycle[index % invoiceStatusCycle.length];
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        visit_id: visit.visit_id,
+        total_amount: decimal(invoiceTotal),
+        status: invoiceStatus,
+      },
+    });
+
+    await prisma.invoice_item.createMany({
+      data: [
+        {
+          invoice_id: invoice.invoice_id,
+          item_type: item_type.service,
+          description: servicePool[index % servicePool.length],
+          qty: 1,
+          unit_price: decimal(serviceAmount),
+          created_at: visitDate,
+        },
+        {
+          invoice_id: invoice.invoice_id,
+          item_type: item_type.assessment,
+          description: assessmentPool[index % assessmentPool.length],
+          qty: 1,
+          unit_price: decimal(assessmentAmount),
+          created_at: visitDate,
+        },
+        ...extraPrescriptionItems.map((item, itemIndex) => ({
+          invoice_id: invoice.invoice_id,
+          item_type: item_type.drug,
+          description: `${prescribedDrugs[itemIndex].name} ${prescribedDrugs[itemIndex].dose}`,
+          qty: Number(item.quantity ?? 0),
+          unit_price: prescribedDrugs[itemIndex].unit_price,
+          created_at: visitDate,
+          prescription_item_id: item.prescription_item_id,
+        })),
+      ],
+    });
+
+    if (invoiceStatus === invoice_status.paid) {
+      await prisma.payment.create({
+        data: {
+          invoice_id: invoice.invoice_id,
+          amount: decimal(invoiceTotal),
+          method: index % 2 === 0 ? 'qr_code' : 'bank_transfer',
+          status: payment_status.confirmed,
+          confirmed_by: adminStaff.staff_id,
+          confirmed_at: new Date(visitDate.getTime() + 1000 * 60 * 90),
+          payment_date: new Date(visitDate.getTime() + 1000 * 60 * 75),
+        },
+      });
+    } else if (invoiceStatus === invoice_status.partially_paid) {
+      await prisma.payment.create({
+        data: {
+          invoice_id: invoice.invoice_id,
+          amount: decimal(invoiceTotal * 0.45),
+          method: 'qr_code',
+          status: payment_status.pending,
+          slip_image: `https://example.com/slips/seed-slip-${invoice.invoice_id}.png`,
+          payment_date: new Date(visitDate.getTime() + 1000 * 60 * 120),
+        },
+      });
+    }
+  }
 
   const allUsers = await prisma.users.findMany({ orderBy: { user_id: 'asc' } });
   const notifications = [
@@ -1102,19 +1529,29 @@ async function main() {
       createdAt: dateAtUtc(2026, 3, 12, 10, 45),
     },
     {
-      userId: allUsers.find((user) => user.username === 'parent.suda')!.user_id,
+      userId: allUsers.find((user) => user.username === '1103700000029')!.user_id,
       title: 'Visit completed',
       message: 'Thanwa Preecha visit notes are ready in the parent portal.',
       genre: 'visit',
       createdAt: dateAtUtc(2026, 3, 13, 16, 5),
     },
     {
-      userId: allUsers.find((user) => user.username === 'parent.kittipong')!.user_id,
+      userId: allUsers.find((user) => user.username === '1103700000045')!.user_id,
       title: 'Appointment reminder',
       message: 'Punn Rattanakorn has an appointment at 09:00 on March 16.',
       genre: 'appointment',
       createdAt: dateAtUtc(2026, 3, 15, 18, 0),
     },
+    ...allUsers.slice(0, 12).map((user, index) => ({
+      userId: user.user_id,
+      title: `Seeded update ${index + 1}`,
+      message:
+        index % 2 === 0
+          ? 'Additional seeded clinic activity has been added to this account.'
+          : 'New follow-up records, prescriptions, and invoices are available in the portal.',
+      genre: index % 2 === 0 ? 'system' : 'visit',
+      createdAt: daysFromToday(-(index % 5), 9 + (index % 6), 15),
+    })),
   ];
 
   for (const notification of notifications) {

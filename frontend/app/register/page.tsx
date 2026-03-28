@@ -1,5 +1,6 @@
 "use client";
 
+import type { AxiosError } from "axios";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -7,6 +8,7 @@ import {
   Box,
   Button,
   CircularProgress,
+  Divider,
   Link as MuiLink,
   Stack,
   TextField,
@@ -17,12 +19,21 @@ import NextLink from "next/link";
 import { AuthShell } from "@/app/components/auth-shell";
 import api from "@/lib/api";
 
+type ApiErrorResponse = {
+  message?: string | string[];
+};
+
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    username: "",
+    parentFirstName: "",
+    parentLastName: "",
+    parentNationalId: "",
+    phone: "",
+    childFirstName: "",
+    childLastName: "",
+    childNationalId: "",
+    childBirthDate: "",
     password: "",
     confirmPassword: "",
   });
@@ -43,6 +54,11 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!/^\d{13}$/.test(form.parentNationalId) || !/^\d{13}$/.test(form.childNationalId)) {
+      setError("Parent and child national IDs must be 13 digits");
+      return;
+    }
+
     if (form.password.length < 6) {
       setError("Password must be at least 6 characters");
       return;
@@ -51,15 +67,21 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await api.post("/auth/register", {
-        username: form.username,
-        password: form.password,
         userType: "parent",
-        firstName: form.firstName || undefined,
-        lastName: form.lastName || undefined,
+        password: form.password,
+        parentFirstName: form.parentFirstName,
+        parentLastName: form.parentLastName,
+        parentNationalId: form.parentNationalId,
+        phone: form.phone || undefined,
+        childFirstName: form.childFirstName,
+        childLastName: form.childLastName,
+        childNationalId: form.childNationalId,
+        childBirthDate: form.childBirthDate,
       });
       router.push("/login");
-    } catch (err: any) {
-      const message = err?.response?.data?.message || "Unable to create account right now";
+    } catch (err: unknown) {
+      const error = err as AxiosError<ApiErrorResponse>;
+      const message = error.response?.data?.message || "Unable to create account right now";
       setError(Array.isArray(message) ? message.join(", ") : message);
     } finally {
       setLoading(false);
@@ -69,11 +91,11 @@ export default function RegisterPage() {
   return (
     <AuthShell
       eyebrow="Parent registration"
-      title="Create account"
-      subtitle="For guardians and parents who need to manage appointments and follow-up history."
+      title="Create family account"
+      subtitle="Register the parent and the child together so booking can start immediately after sign in."
     >
       <Alert severity="info" sx={{ mb: 2.5 }}>
-        This page creates a parent account. Staff roles are assigned later by admin.
+        Parent national ID will be used as the login username.
       </Alert>
       {error && (
         <Alert severity="error" sx={{ mb: 2.5 }}>
@@ -83,9 +105,31 @@ export default function RegisterPage() {
 
       <Box component="form" onSubmit={handleSubmit}>
         <Stack spacing={2.25}>
-          <TextField fullWidth label="ชื่อจริง" value={form.firstName} onChange={handleChange("firstName")} required />
-          <TextField fullWidth label="นามสกุล" value={form.lastName} onChange={handleChange("lastName")} required />
-          <TextField fullWidth label="Username" value={form.username} onChange={handleChange("username")} required />
+          <Typography variant="h6">Parent information</Typography>
+          <TextField fullWidth label="Parent first name" value={form.parentFirstName} onChange={handleChange("parentFirstName")} required />
+          <TextField fullWidth label="Parent last name" value={form.parentLastName} onChange={handleChange("parentLastName")} required />
+          <TextField fullWidth label="Parent national ID" value={form.parentNationalId} onChange={handleChange("parentNationalId")} inputProps={{ maxLength: 13 }} required />
+          <TextField fullWidth label="Phone number" value={form.phone} onChange={handleChange("phone")} />
+
+          <Divider />
+
+          <Typography variant="h6">Child information</Typography>
+          <TextField fullWidth label="Child first name" value={form.childFirstName} onChange={handleChange("childFirstName")} required />
+          <TextField fullWidth label="Child last name" value={form.childLastName} onChange={handleChange("childLastName")} required />
+          <TextField fullWidth label="Child national ID" value={form.childNationalId} onChange={handleChange("childNationalId")} inputProps={{ maxLength: 13 }} required />
+          <TextField
+            fullWidth
+            label="Child birth date"
+            type="date"
+            value={form.childBirthDate}
+            onChange={handleChange("childBirthDate")}
+            slotProps={{ inputLabel: { shrink: true } }}
+            required
+          />
+
+          <Divider />
+
+          <Typography variant="h6">Password</Typography>
           <TextField fullWidth label="Password" type="password" value={form.password} onChange={handleChange("password")} required />
           <TextField
             fullWidth
@@ -105,7 +149,7 @@ export default function RegisterPage() {
           startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <PersonAddRounded />}
           sx={{ mt: 3 }}
         >
-          {loading ? "Creating..." : "Create account"}
+          {loading ? "Creating..." : "Create family account"}
         </Button>
       </Box>
 

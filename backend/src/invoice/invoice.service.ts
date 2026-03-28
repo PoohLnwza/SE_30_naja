@@ -1,10 +1,24 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, PrismaClient, item_type } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+type AuthUser = {
+  user_id: number;
+  user_type: 'staff' | 'parent';
+  staffRole?: string | null;
+  roleNames?: string[];
+};
+
+type ServiceItemInput = {
+  description: string;
+  qty: number;
+  unit_price: number;
+};
 
 @Injectable()
 export class InvoiceService {
@@ -96,9 +110,25 @@ export class InvoiceService {
     return this.prisma.$transaction((tx) => this.syncInvoiceForVisitTx(tx, visitId));
   }
 
+  ensureServicePriceManager(user: AuthUser) {
+    if (user.user_type !== 'staff') {
+      throw new ForbiddenException('Staff access required');
+    }
+
+    const roles = new Set<string>([
+      ...(user.staffRole ? [user.staffRole] : []),
+      ...(user.roleNames ?? []),
+    ]);
+
+    if (!roles.has('admin')) {
+      throw new ForbiddenException('Admin access required to manage treatment prices');
+    }
+  }
+
   async syncInvoiceForVisitTx(
     tx: PrismaClient | Prisma.TransactionClient,
     visitId: number,
+    serviceItems?: ServiceItemInput[],
   ) {
     const prescriptionItems = await tx.prescription_item.findMany({
       where: {
@@ -160,6 +190,49 @@ export class InvoiceService {
           prescription_item_id: item.prescription_item_id,
         })),
       });
+    }
+
+    if (serviceItems !== undefined) {
+      await tx.invoice_item.deleteMany({
+        where: {
+          invoice_id: invoice.invoice_id,
+          item_type: item_type.service,
+        },
+      });
+
+      const normalizedServiceItems = serviceItems
+        .map((item) => ({
+          description: item.description?.trim(),
+          qty: Number(item.qty),
+          unit_price: Number(item.unit_price),
+        }))
+        .filter((item) => item.description);
+
+      const invalidServiceItem = normalizedServiceItems.find(
+        (item) =>
+          !Number.isInteger(item.qty) ||
+          item.qty < 1 ||
+          !Number.isFinite(item.unit_price) ||
+          item.unit_price < 0,
+      );
+
+      if (invalidServiceItem) {
+        throw new BadRequestException(
+          'Treatment price items must include description, quantity, and a valid unit price',
+        );
+      }
+
+      if (normalizedServiceItems.length > 0) {
+        await tx.invoice_item.createMany({
+          data: normalizedServiceItems.map((item) => ({
+            invoice_id: invoice!.invoice_id,
+            item_type: item_type.service,
+            description: item.description!,
+            qty: item.qty,
+            unit_price: item.unit_price,
+          })),
+        });
+      }
     }
 
     const invoiceItems = await tx.invoice_item.findMany({

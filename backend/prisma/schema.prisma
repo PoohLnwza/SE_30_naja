@@ -14,6 +14,7 @@ model appointments {
   room_id           Int?
   booked_by_user_id Int?
   status            appointment_status? @default(scheduled)
+  approval_status   approval_status     @default(pending)
   created_at        DateTime            @default(now()) @db.Timestamp(6)
   deleted_at        DateTime?           @db.Timestamp(6)
   child             child?              @relation(fields: [patient_id], references: [child_id], onDelete: NoAction, onUpdate: NoAction, map: "appointments_ibfk_1")
@@ -66,6 +67,7 @@ model child {
   child_id         Int                @id @default(autoincrement())
   first_name       String?            @db.VarChar(100)
   last_name        String?            @db.VarChar(100)
+  national_id      String?            @unique @db.VarChar(20)
   birth_date       DateTime?          @db.Date
   deleted_at       DateTime?          @db.Timestamp(6)
   appointments     appointments[]
@@ -171,6 +173,7 @@ model parent {
   parent_id    Int            @id @default(autoincrement())
   first_name   String?        @db.VarChar(100)
   last_name    String?        @db.VarChar(100)
+  national_id  String?        @unique @db.VarChar(20)
   phone        String?        @db.VarChar(50)
   deleted_at   DateTime?      @db.Timestamp(6)
   user_id      Int
@@ -364,6 +367,12 @@ enum invoice_status {
 enum payment_status {
   pending
   confirmed
+  rejected
+}
+
+enum approval_status {
+  pending
+  approved
   rejected
 }
 

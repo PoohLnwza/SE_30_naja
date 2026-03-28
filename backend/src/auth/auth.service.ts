@@ -25,40 +25,82 @@ export class AuthService {
       );
     }
 
-    const existing = await this.prisma.users.findUnique({
-      where: { username: dto.username },
-    });
-    if (existing) {
-      throw new ConflictException('Username already exists');
+    const username = dto.parentNationalId;
+
+    const [existingUser, existingParent, existingChild] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { username },
+      }),
+      this.prisma.parent.findFirst({
+        where: { national_id: dto.parentNationalId },
+        select: { parent_id: true },
+      }),
+      this.prisma.child.findFirst({
+        where: { national_id: dto.childNationalId },
+        select: { child_id: true },
+      }),
+    ]);
+
+    if (existingUser) {
+      throw new ConflictException('Parent national ID is already registered');
+    }
+
+    if (existingParent) {
+      throw new ConflictException('Parent national ID already exists');
+    }
+
+    if (existingChild) {
+      throw new ConflictException('Child national ID already exists');
     }
 
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(dto.password, salt);
 
-    const user = await this.prisma.users.create({
-      data: {
-        username: dto.username,
-        password_hash: passwordHash,
-        user_type: dto.userType as any,
-      },
-    });
-
     const parentRole = await this.ensureRole('parent');
 
-    await this.prisma.parent.create({
-      data: {
-        first_name: dto.firstName ?? null,
-        last_name: dto.lastName ?? null,
-        phone: '',
-        user_id: user.user_id,
-      },
-    });
+    const user = await this.prisma.$transaction(async (tx) => {
+      const createdUser = await tx.users.create({
+        data: {
+          username,
+          password_hash: passwordHash,
+          user_type: dto.userType as any,
+        },
+      });
 
-    await this.prisma.user_roles.create({
-      data: {
-        user_id: user.user_id,
-        role_id: parentRole.role_id,
-      },
+      const parent = await tx.parent.create({
+        data: {
+          first_name: dto.parentFirstName,
+          last_name: dto.parentLastName,
+          national_id: dto.parentNationalId,
+          phone: dto.phone ?? '',
+          user_id: createdUser.user_id,
+        },
+      });
+
+      const child = await tx.child.create({
+        data: {
+          first_name: dto.childFirstName,
+          last_name: dto.childLastName,
+          national_id: dto.childNationalId,
+          birth_date: new Date(dto.childBirthDate),
+        },
+      });
+
+      await tx.child_parent.create({
+        data: {
+          child_id: child.child_id,
+          parent_id: parent.parent_id,
+        },
+      });
+
+      await tx.user_roles.create({
+        data: {
+          user_id: createdUser.user_id,
+          role_id: parentRole.role_id,
+        },
+      });
+
+      return createdUser;
     });
 
     const payload = {
@@ -68,6 +110,7 @@ export class AuthService {
     };
     return {
       access_token: this.jwtService.sign(payload),
+      username,
     };
   }
 

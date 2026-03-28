@@ -75,8 +75,14 @@ export class AppointmentsController {
     @Request() req: any,
     @Query('patientId') patientId?: number,
     @Query('date') date?: string,
+    @Query('range') range?: 'all' | 'day' | 'week' | 'month',
   ) {
-    return this.appointmentsService.getAppointments(req.user, patientId, date);
+    return this.appointmentsService.getAppointments(
+      req.user,
+      patientId,
+      date,
+      range ?? 'all',
+    );
   }
 
   @Post()
@@ -90,5 +96,18 @@ export class AppointmentsController {
   @Patch(':id/cancel')
   cancelAppointment(@Request() req: any, @Param('id') id: string) {
     return this.appointmentsService.cancelAppointment(req.user, Number(id));
+  }
+
+  @Patch(':id/approval')
+  updateAppointmentApproval(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() data: { approval_status: 'approved' | 'rejected' },
+  ) {
+    return this.appointmentsService.updateAppointmentApproval(
+      req.user,
+      Number(id),
+      data,
+    );
   }
 }

@@ -61,4 +61,11 @@ export class UsersController {
   ) {
     return this.usersService.getStaffRoleDashboard(req.user, roleName);
   }
+
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'nurse', 'doctor', 'psychologist')
+  @Get('staff/reports')
+  getStaffReports(@Request() req: any) {
+    return this.usersService.getStaffReports(req.user);
+  }
 }

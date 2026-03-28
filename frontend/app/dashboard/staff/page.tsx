@@ -128,16 +128,16 @@ export default function StaffDashboardPage() {
           </Button>
           <Button
             variant="outlined"
-            onClick={() => router.push("/dashboard/staff/create-user")}
+            onClick={() => router.push("/dashboard/staff/management")}
           >
-            Create user
+            Management
           </Button>
           {hasRole(profile, ["admin"]) && (
             <Button
               variant="outlined"
-              onClick={() => router.push("/dashboard/admin/staff")}
+              onClick={() => router.push("/reports/staff")}
             >
-              Staff roles
+              Reports
             </Button>
           )}
         </>
@@ -180,26 +180,23 @@ export default function StaffDashboardPage() {
       >
         <Stack spacing={2.5}>
           <DashboardCard>
-            <Typography variant="h5">Role shortcuts</Typography>
+            <Typography variant="h5">Desk shortcuts</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              Move directly into the desk view for each assigned role.
+              Open the main staff categories without overloading the sidebar.
             </Typography>
             <Box display="flex" gap={1.25} flexWrap="wrap" sx={{ mt: 2.25 }}>
-              {getEffectiveRoles(profile).map((role) => (
-                <Button
-                  key={role}
-                  variant="outlined"
-                  onClick={() =>
-                    router.push(
-                      role === "admin"
-                        ? "/dashboard/admin/staff"
-                        : `/dashboard/staff/${role}`,
-                    )
-                  }
-                >
-                  {titleCase(role)} desk
-                </Button>
-              ))}
+              <Button variant="outlined" onClick={() => router.push("/appointments/staff")}>
+                Appointments
+              </Button>
+              <Button variant="outlined" onClick={() => router.push("/visits/staff")}>
+                Visit records
+              </Button>
+              <Button variant="outlined" onClick={() => router.push("/payment/staff")}>
+                Payments
+              </Button>
+              <Button variant="outlined" onClick={() => router.push("/dashboard/staff/management")}>
+                Management
+              </Button>
             </Box>
           </DashboardCard>
 

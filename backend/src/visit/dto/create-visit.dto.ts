@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { UpsertPrescriptionItemDto } from './upsert-prescription-item.dto';
+import { UpsertServiceItemDto } from './upsert-service-item.dto';
 import { UpsertVitalSignsDto } from './upsert-vital-signs.dto';
 
 export class CreateVisitDto {
@@ -44,4 +45,11 @@ export class CreateVisitDto {
   @ValidateNested({ each: true })
   @Type(() => UpsertPrescriptionItemDto)
   prescriptions?: UpsertPrescriptionItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => UpsertServiceItemDto)
+  service_items?: UpsertServiceItemDto[];
 }

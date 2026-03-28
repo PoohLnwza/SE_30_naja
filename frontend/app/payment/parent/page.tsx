@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Alert,
@@ -12,11 +12,15 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Stack,
+  MenuItem,
+  TableCell,
+  TableRow,
   TextField,
   Typography,
 } from '@mui/material';
-import { AppShell, DashboardCard, StatCard } from '@/app/components/app-shell';
+import { AppShell, StatCard } from '@/app/components/app-shell';
+import { PaginatedTableCard } from '@/app/components/paginated-table-card';
+import { SearchSettingsCard } from '@/app/components/search-settings-card';
 import { parentNav } from '@/app/components/navigation';
 import api from '@/lib/api';
 import type { Profile } from '@/lib/access';
@@ -41,6 +45,8 @@ type Invoice = {
   status: string;
 };
 
+const pageSize = 8;
+
 export default function ParentPaymentPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -48,8 +54,11 @@ export default function ParentPaymentPage() {
   const [unpaidInvoices, setUnpaidInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [invoicePage, setInvoicePage] = useState(1);
+  const [paymentPage, setPaymentPage] = useState(1);
 
-  // Pay dialog
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [slipImage, setSlipImage] = useState('');
@@ -66,14 +75,13 @@ export default function ParentPaymentPage() {
       setProfile(profileData);
       setPayments(paymentData);
 
-      // Find unpaid invoices from appointments
       try {
         const { data: appointments } = await api.get<any[]>('/appointments');
         const invoicePromises = appointments
-          .filter((a) => a.status === 'completed')
-          .map(async (a) => {
+          .filter((appointment) => appointment.status === 'completed')
+          .map(async (appointment) => {
             try {
-              const { data: visit } = await api.get<any>(`/visit/appointment/${a.appointment_id}`);
+              const { data: visit } = await api.get<any>(`/visit/appointment/${appointment.appointment_id}`);
               const { data: invoice } = await api.get<any>(`/invoice/visit/${visit.visit_id}`);
               return invoice;
             } catch {
@@ -81,12 +89,10 @@ export default function ParentPaymentPage() {
             }
           });
         const invoices = (await Promise.all(invoicePromises)).filter(Boolean);
-        const unpaid = invoices.filter(
-          (inv: any) => inv && (!inv.status || inv.status === 'unpaid'),
-        );
+        const unpaid = invoices.filter((invoice: any) => invoice && (!invoice.status || invoice.status === 'unpaid'));
         setUnpaidInvoices(unpaid);
       } catch {
-        // invoices are optional, don't block the page
+        setUnpaidInvoices([]);
       }
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Unable to load payments';
@@ -98,8 +104,32 @@ export default function ParentPaymentPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, []);
+
+  const filteredInvoices = useMemo(
+    () =>
+      unpaidInvoices.filter((invoice) =>
+        `${invoice.invoice_id} ${invoice.visit_id ?? ''} ${invoice.total_amount ?? ''} ${invoice.status ?? ''}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
+      ),
+    [query, unpaidInvoices],
+  );
+
+  const filteredPayments = useMemo(
+    () =>
+      payments.filter((payment) => {
+        const matchesStatus = statusFilter === 'all' || payment.status === statusFilter;
+        const haystack = `${payment.payment_id} ${payment.invoice_id} ${payment.child_name ?? ''} ${payment.method} ${payment.status}`
+          .toLowerCase();
+        return matchesStatus && haystack.includes(query.toLowerCase());
+      }),
+    [payments, query, statusFilter],
+  );
+
+  const pagedInvoices = filteredInvoices.slice((invoicePage - 1) * pageSize, invoicePage * pageSize);
+  const pagedPayments = filteredPayments.slice((paymentPage - 1) * pageSize, paymentPage * pageSize);
 
   const handleOpenPay = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
@@ -116,7 +146,7 @@ export default function ParentPaymentPage() {
         slipImage: slipImage || undefined,
       });
       setPayDialogOpen(false);
-      fetchData();
+      await fetchData();
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Unable to submit payment';
       window.alert(Array.isArray(message) ? message.join(', ') : message);
@@ -127,41 +157,53 @@ export default function ParentPaymentPage() {
 
   const statusColor = (status: string) => {
     switch (status) {
-      case 'confirmed': return 'success';
-      case 'rejected': return 'error';
-      default: return 'warning';
+      case 'confirmed':
+        return 'success';
+      case 'rejected':
+        return 'error';
+      default:
+        return 'warning';
     }
   };
 
   const statusLabel = (status: string) => {
     switch (status) {
-      case 'confirmed': return 'Confirmed';
-      case 'rejected': return 'Rejected';
-      default: return 'Pending';
+      case 'confirmed':
+        return 'Confirmed';
+      case 'rejected':
+        return 'Rejected';
+      default:
+        return 'Pending';
     }
   };
 
   return (
     <AppShell
       title="Payments"
-      subtitle="View your invoices, scan QR code to pay, and track payment status."
+      subtitle="Keep unpaid invoices and payment history in clean table sections so parents can find each billing row quickly."
       navTitle="Guardian Care"
       navItems={parentNav()}
       badge="Parent"
       profileName={profile?.username}
       profileMeta="Payment records"
       actions={
-        <Button variant="outlined" onClick={() => router.push('/dashboard/parent')}>
-          Dashboard
-        </Button>
+        <>
+          <Button variant="outlined" onClick={() => router.push('/dashboard/parent')}>
+            Dashboard
+          </Button>
+          <Button variant="contained" onClick={() => router.push('/visits/parent')}>
+            Visit records
+          </Button>
+        </>
       }
     >
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-      <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'repeat(3, 1fr)' }} gap={2} mb={3}>
-        <StatCard label="Total payments" value={payments.length} />
-        <StatCard label="Confirmed" value={payments.filter((p) => p.status === 'confirmed').length} />
-        <StatCard label="Pending" value={payments.filter((p) => p.status === 'pending').length} />
+      <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'repeat(4, 1fr)' }} gap={2} mb={3}>
+        <StatCard label="Unpaid invoices" value={unpaidInvoices.length} helper="Invoices ready for payment" />
+        <StatCard label="Total payments" value={payments.length} helper="Submitted payment rows" />
+        <StatCard label="Confirmed" value={payments.filter((payment) => payment.status === 'confirmed').length} helper="Verified by staff" />
+        <StatCard label="Pending" value={payments.filter((payment) => payment.status === 'pending').length} helper="Waiting for approval" />
       </Box>
 
       {loading ? (
@@ -169,77 +211,131 @@ export default function ParentPaymentPage() {
           <CircularProgress />
         </Box>
       ) : (
-        <Stack spacing={3}>
-          {/* Unpaid invoices */}
-          {unpaidInvoices.length > 0 && (
-            <>
-              <Typography variant="h5">Unpaid Invoices</Typography>
-              {unpaidInvoices.map((invoice) => (
-                <DashboardCard key={invoice.invoice_id}>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-                    <Box>
-                      <Typography variant="h6">Invoice #{invoice.invoice_id}</Typography>
-                      <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                        Amount: {formatMoney(Number(invoice.total_amount ?? 0))}
-                      </Typography>
-                    </Box>
-                    <Button variant="contained" color="primary" onClick={() => handleOpenPay(invoice)}>
-                      Pay now
-                    </Button>
-                  </Box>
-                </DashboardCard>
-              ))}
-            </>
-          )}
+        <>
+          <SearchSettingsCard description="Use the filters once, then review unpaid invoices and payment history from the tables below.">
+            <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'minmax(0, 1.5fr) 220px' }} gap={2}>
+              <TextField
+                label="Search invoices or payments"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setInvoicePage(1);
+                  setPaymentPage(1);
+                }}
+                placeholder="Invoice id, child name, method, payment id"
+                fullWidth
+              />
+              <TextField
+                select
+                label="Payment status"
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value);
+                  setPaymentPage(1);
+                }}
+                fullWidth
+              >
+                <MenuItem value="all">All statuses</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
+                <MenuItem value="confirmed">Confirmed</MenuItem>
+                <MenuItem value="rejected">Rejected</MenuItem>
+              </TextField>
+            </Box>
+          </SearchSettingsCard>
 
-          {/* Payment history */}
-          <Typography variant="h5">Payment History</Typography>
-          {payments.length === 0 ? (
-            <DashboardCard>
-              <Typography variant="h6">No payments yet</Typography>
-              <Typography color="text.secondary" sx={{ mt: 1 }}>
-                When you make a payment, it will appear here.
-              </Typography>
-            </DashboardCard>
-          ) : (
-            payments.map((payment) => (
-              <DashboardCard key={payment.payment_id}>
-                <Box display="flex" justifyContent="space-between" gap={2} flexWrap="wrap">
-                  <Box>
-                    <Typography variant="h6">
-                      {payment.child_name || 'Unknown'} — Invoice #{payment.invoice_id}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                      Amount: {formatMoney(Number(payment.amount))}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                      Date: {formatDate(payment.payment_date)}
-                    </Typography>
-                    {payment.slip_image && (
-                      <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                        Slip: Uploaded
-                      </Typography>
-                    )}
-                  </Box>
-                  <Chip label={statusLabel(payment.status)} color={statusColor(payment.status)} />
-                </Box>
-              </DashboardCard>
-            ))
-          )}
-        </Stack>
+          <Box sx={{ mt: 2.5 }}>
+            <PaginatedTableCard
+              title="Unpaid invoice table"
+              subtitle="Use Pay now to open the payment dialog only for the invoice you selected."
+              page={invoicePage}
+              pageCount={Math.max(1, Math.ceil(filteredInvoices.length / pageSize))}
+              onPageChange={setInvoicePage}
+              empty={filteredInvoices.length === 0}
+              emptyLabel="No unpaid invoices match the current search."
+              header={
+                <TableRow>
+                  <TableCell>Invoice</TableCell>
+                  <TableCell>Visit</TableCell>
+                  <TableCell align="right">Total</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Action</TableCell>
+                </TableRow>
+              }
+              body={
+                <>
+                  {pagedInvoices.map((invoice) => (
+                    <TableRow key={invoice.invoice_id} hover>
+                      <TableCell>#{invoice.invoice_id}</TableCell>
+                      <TableCell>{invoice.visit_id ? `#${invoice.visit_id}` : '-'}</TableCell>
+                      <TableCell align="right">{formatMoney(Number(invoice.total_amount ?? 0))}</TableCell>
+                      <TableCell>
+                        <Chip label={invoice.status || 'unpaid'} size="small" color="warning" />
+                      </TableCell>
+                      <TableCell>
+                        <Button size="small" variant="contained" onClick={() => handleOpenPay(invoice)}>
+                          Pay now
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </>
+              }
+            />
+          </Box>
+
+          <Box sx={{ mt: 2.5 }}>
+            <PaginatedTableCard
+              title="Payment history table"
+              subtitle="Track each submitted payment without stacking long cards down the page."
+              page={paymentPage}
+              pageCount={Math.max(1, Math.ceil(filteredPayments.length / pageSize))}
+              onPageChange={setPaymentPage}
+              empty={filteredPayments.length === 0}
+              emptyLabel="No payments match the current filters."
+              header={
+                <TableRow>
+                  <TableCell>Payment ID</TableCell>
+                  <TableCell>Child</TableCell>
+                  <TableCell>Invoice</TableCell>
+                  <TableCell align="right">Amount</TableCell>
+                  <TableCell>Method</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Submitted</TableCell>
+                  <TableCell>Slip</TableCell>
+                </TableRow>
+              }
+              body={
+                <>
+                  {pagedPayments.map((payment) => (
+                    <TableRow key={payment.payment_id} hover>
+                      <TableCell>#{payment.payment_id}</TableCell>
+                      <TableCell>{payment.child_name || '-'}</TableCell>
+                      <TableCell>#{payment.invoice_id}</TableCell>
+                      <TableCell align="right">{formatMoney(Number(payment.amount))}</TableCell>
+                      <TableCell>{payment.method}</TableCell>
+                      <TableCell>
+                        <Chip label={statusLabel(payment.status)} size="small" color={statusColor(payment.status)} />
+                      </TableCell>
+                      <TableCell>{formatDate(payment.payment_date)}</TableCell>
+                      <TableCell>{payment.slip_image ? 'Uploaded' : '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </>
+              }
+            />
+          </Box>
+        </>
       )}
 
-      {/* Pay Dialog */}
       <Dialog open={payDialogOpen} onClose={() => setPayDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Payment — Invoice #{selectedInvoice?.invoice_id}</DialogTitle>
+        <DialogTitle>Payment - Invoice #{selectedInvoice?.invoice_id}</DialogTitle>
         <DialogContent>
-          <Stack spacing={3} sx={{ mt: 1 }}>
+          <Box sx={{ mt: 1.5 }}>
             <Typography variant="h4" textAlign="center">
               {formatMoney(Number(selectedInvoice?.total_amount ?? 0))}
             </Typography>
 
-            {/* QR Code */}
-            <Box textAlign="center">
+            <Box textAlign="center" sx={{ mt: 3 }}>
               <Typography variant="body2" color="text.secondary" mb={1}>
                 Scan QR Code to pay
               </Typography>
@@ -255,10 +351,11 @@ export default function ParentPaymentPage() {
               label="Slip image URL (optional)"
               placeholder="Paste slip image URL after transfer"
               value={slipImage}
-              onChange={(e) => setSlipImage(e.target.value)}
+              onChange={(event) => setSlipImage(event.target.value)}
               fullWidth
+              sx={{ mt: 3 }}
             />
-          </Stack>
+          </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setPayDialogOpen(false)}>Cancel</Button>

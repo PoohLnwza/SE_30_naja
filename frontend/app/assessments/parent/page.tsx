@@ -56,6 +56,17 @@ type AssessmentResult = {
     severity_level: string;
     recommendation_text: string | null;
   } | null;
+  answers?: Array<{
+    answer_id: number;
+    question: {
+      question_id: number;
+      question_text: string | null;
+    } | null;
+    choice: {
+      choice_id: number;
+      choice_text: string | null;
+    } | null;
+  }>;
 };
 
 type ParentDashboard = {
@@ -305,8 +316,7 @@ export default function ParentAssessmentsPage() {
         <DashboardCard>
           <Typography variant="h5">Take an assessment</Typography>
           <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-            Each submission stores question-level answers and a score-band
-            interpretation.
+            Parents answer the checklist without seeing raw scoring. The system summarizes whether follow-up booking is recommended.
           </Typography>
 
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2.25 }}>
@@ -382,7 +392,7 @@ export default function ParentAssessmentsPage() {
                           key={choice.choice_id}
                           value={String(choice.choice_id)}
                           control={<Radio />}
-                          label={`${choice.choice_text} (score ${choice.score ?? 0})`}
+                          label={choice.choice_text}
                         />
                       ))}
                     </RadioGroup>
@@ -424,13 +434,26 @@ export default function ParentAssessmentsPage() {
                     {formatDate(result.assessed_at, "en-US")}
                   </Typography>
                   <Box display="flex" gap={1} flexWrap="wrap" sx={{ mt: 1.25 }}>
-                    <Chip label={`Score ${result.total_score ?? 0}`} />
                     {result.band?.severity_level && (
                       <Chip
                         label={titleCase(result.band.severity_level)}
                         color="primary"
                       />
                     )}
+                    <Chip
+                      label={
+                        result.band?.severity_level &&
+                        ["mild", "moderate", "severe"].includes(result.band.severity_level)
+                          ? "Booking recommended"
+                          : "Monitor first"
+                      }
+                      color={
+                        result.band?.severity_level &&
+                        ["moderate", "severe"].includes(result.band.severity_level)
+                          ? "warning"
+                          : "default"
+                      }
+                    />
                   </Box>
                   {result.interpreted_text && (
                     <Typography color="text.secondary" sx={{ mt: 1.25 }}>
@@ -442,6 +465,35 @@ export default function ParentAssessmentsPage() {
                       Recommendation: {result.band.recommendation_text}
                     </Typography>
                   )}
+                  {result.answers && result.answers.length > 0 && (
+                    <Stack spacing={1} sx={{ mt: 1.5 }}>
+                      {result.answers.map((answer, index) => (
+                        <Box
+                          key={answer.answer_id}
+                          sx={{
+                            p: 1.5,
+                            borderRadius: 3,
+                            background: "rgba(255,255,255,0.45)",
+                            border: "1px solid rgba(122, 156, 156, 0.12)",
+                          }}
+                        >
+                          <Typography sx={{ fontWeight: 700 }}>
+                            {index + 1}. {answer.question?.question_text || "-"}
+                          </Typography>
+                          <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                            Selected answer: {answer.choice?.choice_text || "-"}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                  )}
+                  <Button
+                    variant="outlined"
+                    sx={{ mt: 1.5 }}
+                    onClick={() => router.push("/appointments/parent")}
+                  >
+                    Book appointment
+                  </Button>
                 </Box>
               ))}
               {results.length === 0 && (

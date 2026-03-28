@@ -1,5 +1,4 @@
 import type { Profile } from "@/lib/access";
-import { getEffectiveRoles } from "@/lib/access";
 import type { NavItem } from "./app-shell";
 
 export function parentNav(): NavItem[] {
@@ -7,6 +6,7 @@ export function parentNav(): NavItem[] {
     { label: "Dashboard", href: "/dashboard/parent" },
     { label: "Book Appointment", href: "/appointments/parent" },
     { label: "Assessments", href: "/assessments/parent" },
+    { label: "Visit Records", href: "/visits/parent" },
     { label: "History", href: "/appointments/parent/history" },
     { label: "Payments", href: "/payment/parent" },
     { label: "Profile", href: "/profile" },
@@ -20,21 +20,8 @@ export function staffNav(profile: Profile | null): NavItem[] {
     { label: "Visit Records", href: "/visits/staff" },
     { label: "Assessments", href: "/assessments/staff" },
     { label: "Payments", href: "/payment/staff" },
-    { label: "Create User", href: "/dashboard/staff/create-user" },
-    { label: "Family Links", href: "/dashboard/staff/family-links" },
+    { label: "Management", href: "/dashboard/staff/management" },
   ];
-
-  for (const role of getEffectiveRoles(profile)) {
-    if (role === "admin") {
-      items.push({ label: "Staff Roles", href: "/dashboard/admin/staff" });
-      continue;
-    }
-
-    items.push({
-      label: `${role[0]?.toUpperCase() || ""}${role.slice(1)} Desk`,
-      href: `/dashboard/staff/${role}`,
-    });
-  }
 
   items.push({ label: "Profile", href: "/profile" });
 

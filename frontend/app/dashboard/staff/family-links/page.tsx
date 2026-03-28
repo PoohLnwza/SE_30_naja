@@ -7,15 +7,20 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   MenuItem,
-  Stack,
+  TableCell,
+  TableRow,
   TextField,
-  Typography,
 } from "@mui/material";
-import { AppShell, DashboardCard, StatCard } from "@/app/components/app-shell";
+import { AppShell, StatCard } from "@/app/components/app-shell";
 import { staffNav } from "@/app/components/navigation";
+import { PaginatedTableCard } from "@/app/components/paginated-table-card";
+import { SearchSettingsCard } from "@/app/components/search-settings-card";
 import api from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { hasRole, type Profile } from "@/lib/access";
@@ -73,7 +78,18 @@ type LinkedParent = {
   }>;
 };
 
+type LinkRow = {
+  parentId: number;
+  parentName: string;
+  username: string;
+  phone: string;
+  childId: number;
+  childName: string;
+  birthDate: string | null;
+};
+
 const linkManagerRoles = ["admin", "nurse", "doctor"];
+const pageSize = 8;
 
 export default function StaffFamilyLinksPage() {
   const router = useRouter();
@@ -91,6 +107,13 @@ export default function StaffFamilyLinksPage() {
   const [childLastName, setChildLastName] = useState("");
   const [childBirthDate, setChildBirthDate] = useState("");
   const [savingChild, setSavingChild] = useState(false);
+  const [query, setQuery] = useState("");
+  const [parentFilter, setParentFilter] = useState("all");
+  const [childStateFilter, setChildStateFilter] = useState("all");
+  const [linkPage, setLinkPage] = useState(1);
+  const [childPage, setChildPage] = useState(1);
+  const [createChildOpen, setCreateChildOpen] = useState(false);
+  const [createLinkOpen, setCreateLinkOpen] = useState(false);
 
   const canManageLinks = useMemo(
     () => profile?.user_type === "staff" && hasRole(profile, linkManagerRoles),
@@ -131,8 +154,8 @@ export default function StaffFamilyLinksPage() {
     void loadData();
   }, [loadData]);
 
-  const handleCreateLink = async (event: React.SyntheticEvent) => {
-    event.preventDefault();
+  const handleCreateLink = async (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
     setError("");
     setSuccess("");
 
@@ -150,6 +173,7 @@ export default function StaffFamilyLinksPage() {
 
       setSelectedParentId("");
       setSelectedChildId("");
+      setCreateLinkOpen(false);
       setSuccess("Child linked to parent");
       await loadData();
     } catch (err: unknown) {
@@ -161,8 +185,8 @@ export default function StaffFamilyLinksPage() {
     }
   };
 
-  const handleCreateChild = async (event: React.SyntheticEvent) => {
-    event.preventDefault();
+  const handleCreateChild = async (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
     setError("");
     setSuccess("");
     setSavingChild(true);
@@ -175,6 +199,7 @@ export default function StaffFamilyLinksPage() {
       setChildFirstName("");
       setChildLastName("");
       setChildBirthDate("");
+      setCreateChildOpen(false);
       setSuccess("Child record created");
       await loadData();
     } catch (err: unknown) {
@@ -209,6 +234,60 @@ export default function StaffFamilyLinksPage() {
     }
   };
 
+  const linkRows = useMemo<LinkRow[]>(
+    () =>
+      linkedParents.flatMap((parent) =>
+        parent.child_parent.flatMap((item) => {
+          const child = item.child;
+          if (!child) {
+            return [];
+          }
+
+          return [
+            {
+              parentId: parent.parent_id,
+              parentName: `${parent.first_name || "-"} ${parent.last_name || ""}`.trim(),
+              username: parent.users.username,
+              phone: parent.phone || "-",
+              childId: child.child_id,
+              childName: `${child.first_name || "-"} ${child.last_name || ""}`.trim(),
+              birthDate: child.birth_date,
+            },
+          ];
+        }),
+      ),
+    [linkedParents],
+  );
+
+  const filteredLinkRows = useMemo(
+    () =>
+      linkRows.filter((row) => {
+        const matchesParent = parentFilter === "all" || String(row.parentId) === parentFilter;
+        const haystack = `${row.parentName} ${row.username} ${row.phone} ${row.childName} ${row.birthDate ?? ""}`
+          .toLowerCase();
+        return matchesParent && haystack.includes(query.toLowerCase());
+      }),
+    [linkRows, parentFilter, query],
+  );
+
+  const filteredChildren = useMemo(
+    () =>
+      children.filter((child) => {
+        const linkCount = child._count.child_parent;
+        const matchesState =
+          childStateFilter === "all" ||
+          (childStateFilter === "linked" && linkCount > 0) ||
+          (childStateFilter === "unlinked" && linkCount === 0);
+        const haystack = `${child.first_name ?? ""} ${child.last_name ?? ""} ${child.birth_date ?? ""}`
+          .toLowerCase();
+        return matchesState && haystack.includes(query.toLowerCase());
+      }),
+    [childStateFilter, children, query],
+  );
+
+  const pagedLinks = filteredLinkRows.slice((linkPage - 1) * pageSize, linkPage * pageSize);
+  const pagedChildren = filteredChildren.slice((childPage - 1) * pageSize, childPage * pageSize);
+
   if (loading) {
     return (
       <Box minHeight="100vh" display="grid" sx={{ placeItems: "center" }}>
@@ -238,12 +317,13 @@ export default function StaffFamilyLinksPage() {
     );
   }
 
-  const linkedChildrenCount = linkedParents.reduce((sum, parent) => sum + parent.child_parent.length, 0);
+  const linkedChildrenCount = linkRows.length;
+  const unlinkedChildrenCount = children.filter((child) => child._count.child_parent === 0).length;
 
   return (
     <AppShell
       title="Family Links"
-      subtitle="Match child records with parent accounts so booking, assessments, and access rules follow the right family."
+      subtitle="Keep relationship management compact at the top, then review link rows and child records from structured tables."
       navTitle="Clinic Ops"
       navItems={staffNav(profile)}
       badge="Staff"
@@ -251,6 +331,12 @@ export default function StaffFamilyLinksPage() {
       profileMeta="Relationship manager"
       actions={
         <>
+          <Button variant="contained" onClick={() => setCreateLinkOpen(true)}>
+            Create link
+          </Button>
+          <Button variant="outlined" onClick={() => setCreateChildOpen(true)}>
+            Add child
+          </Button>
           <Button variant="outlined" onClick={() => router.push("/dashboard/staff/create-user")}>
             Create user
           </Button>
@@ -263,218 +349,230 @@ export default function StaffFamilyLinksPage() {
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
 
-      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2.5} mb={2.5}>
+      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2.5} mb={2.5}>
         <StatCard label="Parents" value={parents.length} helper="Active parent profiles" />
         <StatCard label="Children" value={children.length} helper="Child records available to link" />
-        <StatCard label="Links" value={linkedChildrenCount} helper="Current parent-child relationships" />
+        <StatCard label="Links" value={linkedChildrenCount} helper="Current relationship rows" />
+        <StatCard label="Unlinked children" value={unlinkedChildrenCount} helper="Children still waiting for parent access" />
       </Box>
 
-      <Box display="grid" gridTemplateColumns={{ xs: "1fr", xl: "0.95fr 1.05fr" }} gap={2.5}>
-        <Stack spacing={2.5}>
-          <DashboardCard>
-            <Typography variant="h5">Add child</Typography>
-            <Typography color="text.secondary" sx={{ mt: 1 }}>
-              Create a new child record that can then be linked to a parent account.
-            </Typography>
-
-            <Box
-              component="form"
-              onSubmit={handleCreateChild}
-              sx={{ mt: 2.5 }}
-            >
-              <Stack spacing={2}>
-                <TextField
-                  label="First name"
-                  value={childFirstName}
-                  onChange={(e) => setChildFirstName(e.target.value)}
-                  required
-                  fullWidth
-                />
-                <TextField
-                  label="Last name"
-                  value={childLastName}
-                  onChange={(e) => setChildLastName(e.target.value)}
-                  required
-                  fullWidth
-                />
-                <TextField
-                  label="Birth date"
-                  type="date"
-                  value={childBirthDate}
-                  onChange={(e) => setChildBirthDate(e.target.value)}
-                  fullWidth
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-                <Button type="submit" variant="contained" disabled={savingChild}>
-                  {savingChild ? "Saving..." : "Add child"}
-                </Button>
-              </Stack>
-            </Box>
-          </DashboardCard>
-
-          <DashboardCard>
-            <Typography variant="h5">Create link</Typography>
-            <Typography color="text.secondary" sx={{ mt: 1 }}>
-              Choose one parent account and one child record, then save the relationship.
-            </Typography>
-
-            <Box component="form" onSubmit={handleCreateLink} sx={{ mt: 2.5 }}>
-              <Stack spacing={2}>
-                <TextField
-                  select
-                  label="Parent account"
-                  value={selectedParentId}
-                  onChange={(event) => setSelectedParentId(event.target.value)}
-                  required
-                  fullWidth
-                >
-                  {parents.map((parent) => (
-                    <MenuItem key={parent.parent_id} value={String(parent.parent_id)}>
-                      {`${parent.first_name || "-"} ${parent.last_name || ""}`.trim()} | @{parent.users.username}
-                    </MenuItem>
-                  ))}
-                </TextField>
-
-                <TextField
-                  select
-                  label="Child record"
-                  value={selectedChildId}
-                  onChange={(event) => setSelectedChildId(event.target.value)}
-                  required
-                  fullWidth
-                >
-                  {children.map((child) => (
-                    <MenuItem key={child.child_id} value={String(child.child_id)}>
-                      {`${child.first_name || "-"} ${child.last_name || ""}`.trim()} | Birth date {formatDate(child.birth_date)}
-                    </MenuItem>
-                  ))}
-                </TextField>
-
-                <Button type="submit" variant="contained" disabled={saving}>
-                  {saving ? "Linking..." : "Link child to parent"}
-                </Button>
-              </Stack>
-            </Box>
-          </DashboardCard>
-
-          <DashboardCard>
-            <Typography variant="h5">Available records</Typography>
-            <Stack spacing={1.5} sx={{ mt: 2.25 }}>
-              {children.slice(0, 8).map((child) => (
-                <Box
-                  key={child.child_id}
-                  sx={{
-                    p: 2,
-                    borderRadius: 4,
-                    background: "rgba(255,255,255,0.56)",
-                    border: "1px solid rgba(122, 156, 156, 0.14)",
-                  }}
-                >
-                  <Stack direction="row" justifyContent="space-between" gap={2} flexWrap="wrap">
-                    <Box>
-                      <Typography sx={{ fontWeight: 700 }}>
-                        {child.first_name || "-"} {child.last_name || ""}
-                      </Typography>
-                      <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                        Birth date: {formatDate(child.birth_date)}
-                      </Typography>
-                    </Box>
-                    <Chip label={`${child._count.child_parent} link(s)`} />
-                  </Stack>
-                </Box>
-              ))}
-              {children.length > 8 && (
-                <Typography color="text.secondary">
-                  Showing 8 of {children.length} child records.
-                </Typography>
-              )}
-            </Stack>
-          </DashboardCard>
-        </Stack>
-
-        <DashboardCard>
-          <Typography variant="h5">Current family links</Typography>
-          <Typography color="text.secondary" sx={{ mt: 1 }}>
-            Review each parent profile and remove relationships that should no longer grant access.
-          </Typography>
-
-          <Stack spacing={1.5} sx={{ mt: 2.25 }}>
-            {linkedParents.length === 0 && (
-              <Typography color="text.secondary">No parent accounts found.</Typography>
-            )}
-
-            {linkedParents.map((parent) => (
-              <Box
-                key={parent.parent_id}
-                sx={{
-                  p: 2.25,
-                  borderRadius: 4,
-                  background: "rgba(255,255,255,0.56)",
-                  border: "1px solid rgba(122, 156, 156, 0.14)",
-                }}
-              >
-                <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={2}>
-                  <Box>
-                    <Typography sx={{ fontWeight: 700 }}>
-                      {parent.first_name || "-"} {parent.last_name || ""}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                      Username: @{parent.users.username}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                      Phone: {parent.phone || "-"}
-                    </Typography>
-                  </Box>
-                  <Chip label={`${parent.child_parent.length} linked child(ren)`} />
-                </Stack>
-
-                <Stack spacing={1.25} sx={{ mt: 2 }}>
-                  {parent.child_parent.length === 0 && (
-                    <Typography color="text.secondary">No linked children yet.</Typography>
-                  )}
-
-                  {parent.child_parent.map((item) => {
-                    const child = item.child;
-                    if (!child) {
-                      return null;
-                    }
-
-                    return (
-                      <Box
-                        key={`${parent.parent_id}-${child.child_id}`}
-                        sx={{
-                          p: 1.75,
-                          borderRadius: 3,
-                          background: "rgba(248, 246, 239, 0.92)",
-                          border: "1px solid rgba(204, 209, 187, 0.35)",
-                        }}
-                      >
-                        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={1.5}>
-                          <Box>
-                            <Typography sx={{ fontWeight: 700 }}>
-                              {child.first_name || "-"} {child.last_name || ""}
-                            </Typography>
-                            <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                              Birth date: {formatDate(child.birth_date)}
-                            </Typography>
-                          </Box>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={() => handleUnlink(parent.parent_id, child.child_id)}
-                          >
-                            Unlink
-                          </Button>
-                        </Stack>
-                      </Box>
-                    );
-                  })}
-                </Stack>
-              </Box>
+      <SearchSettingsCard description="Use one compact search panel for both relationship tables below.">
+        <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "minmax(0, 1.4fr) 280px 220px" }} gap={2}>
+          <TextField
+            label="Search parent or child"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setLinkPage(1);
+              setChildPage(1);
+            }}
+            placeholder="Parent name, username, phone, child name"
+            fullWidth
+          />
+          <TextField
+            select
+            label="Parent account"
+            value={parentFilter}
+            onChange={(event) => {
+              setParentFilter(event.target.value);
+              setLinkPage(1);
+            }}
+            fullWidth
+          >
+            <MenuItem value="all">All parents</MenuItem>
+            {parents.map((parent) => (
+              <MenuItem key={parent.parent_id} value={String(parent.parent_id)}>
+                {`${parent.first_name || "-"} ${parent.last_name || ""}`.trim()}
+              </MenuItem>
             ))}
-          </Stack>
-        </DashboardCard>
+          </TextField>
+          <TextField
+            select
+            label="Child state"
+            value={childStateFilter}
+            onChange={(event) => {
+              setChildStateFilter(event.target.value);
+              setChildPage(1);
+            }}
+            fullWidth
+          >
+            <MenuItem value="all">All children</MenuItem>
+            <MenuItem value="linked">Linked</MenuItem>
+            <MenuItem value="unlinked">Unlinked</MenuItem>
+          </TextField>
+        </Box>
+      </SearchSettingsCard>
+
+      <Box sx={{ mt: 2.5 }}>
+        <PaginatedTableCard
+          title="Family link table"
+          subtitle="Each row represents one parent-child relationship."
+          page={linkPage}
+          pageCount={Math.max(1, Math.ceil(filteredLinkRows.length / pageSize))}
+          onPageChange={setLinkPage}
+          empty={filteredLinkRows.length === 0}
+          emptyLabel="No relationship rows match the current filters."
+          header={
+            <TableRow>
+              <TableCell>Parent</TableCell>
+              <TableCell>Username</TableCell>
+              <TableCell>Phone</TableCell>
+              <TableCell>Child</TableCell>
+              <TableCell>Birth date</TableCell>
+              <TableCell>Action</TableCell>
+            </TableRow>
+          }
+          body={
+            <>
+              {pagedLinks.map((row) => (
+                <TableRow key={`${row.parentId}-${row.childId}`} hover>
+                  <TableCell>{row.parentName}</TableCell>
+                  <TableCell>@{row.username}</TableCell>
+                  <TableCell>{row.phone}</TableCell>
+                  <TableCell>{row.childName}</TableCell>
+                  <TableCell>{formatDate(row.birthDate)}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      onClick={() => handleUnlink(row.parentId, row.childId)}
+                    >
+                      Unlink
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </>
+          }
+        />
       </Box>
+
+      <Box sx={{ mt: 2.5 }}>
+        <PaginatedTableCard
+          title="Child record table"
+          subtitle="Use Quick link to open the linking dialog with the child preselected."
+          page={childPage}
+          pageCount={Math.max(1, Math.ceil(filteredChildren.length / pageSize))}
+          onPageChange={setChildPage}
+          empty={filteredChildren.length === 0}
+          emptyLabel="No child records match the current filters."
+          header={
+            <TableRow>
+              <TableCell>Child</TableCell>
+              <TableCell>Birth date</TableCell>
+              <TableCell>Links</TableCell>
+              <TableCell>Action</TableCell>
+            </TableRow>
+          }
+          body={
+            <>
+              {pagedChildren.map((child) => (
+                <TableRow key={child.child_id} hover>
+                  <TableCell>{`${child.first_name || "-"} ${child.last_name || ""}`.trim()}</TableCell>
+                  <TableCell>{formatDate(child.birth_date)}</TableCell>
+                  <TableCell>{child._count.child_parent}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => {
+                        setSelectedChildId(String(child.child_id));
+                        setCreateLinkOpen(true);
+                      }}
+                    >
+                      Quick link
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </>
+          }
+        />
+      </Box>
+
+      <Dialog open={createChildOpen} onClose={() => setCreateChildOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add child</DialogTitle>
+        <DialogContent>
+          <Box component="form" onSubmit={handleCreateChild} sx={{ mt: 1.5 }}>
+            <Box display="grid" gap={2}>
+              <TextField
+                label="First name"
+                value={childFirstName}
+                onChange={(event) => setChildFirstName(event.target.value)}
+                required
+                fullWidth
+              />
+              <TextField
+                label="Last name"
+                value={childLastName}
+                onChange={(event) => setChildLastName(event.target.value)}
+                required
+                fullWidth
+              />
+              <TextField
+                label="Birth date"
+                type="date"
+                value={childBirthDate}
+                onChange={(event) => setChildBirthDate(event.target.value)}
+                fullWidth
+                slotProps={{ inputLabel: { shrink: true } }}
+              />
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCreateChildOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleCreateChild} disabled={savingChild}>
+            {savingChild ? "Saving..." : "Save child"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={createLinkOpen} onClose={() => setCreateLinkOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Create link</DialogTitle>
+        <DialogContent>
+          <Box component="form" onSubmit={handleCreateLink} sx={{ mt: 1.5 }}>
+            <Box display="grid" gap={2}>
+              <TextField
+                select
+                label="Parent account"
+                value={selectedParentId}
+                onChange={(event) => setSelectedParentId(event.target.value)}
+                required
+                fullWidth
+              >
+                {parents.map((parent) => (
+                  <MenuItem key={parent.parent_id} value={String(parent.parent_id)}>
+                    {`${parent.first_name || "-"} ${parent.last_name || ""}`.trim()} | @{parent.users.username}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                select
+                label="Child record"
+                value={selectedChildId}
+                onChange={(event) => setSelectedChildId(event.target.value)}
+                required
+                fullWidth
+              >
+                {children.map((child) => (
+                  <MenuItem key={child.child_id} value={String(child.child_id)}>
+                    {`${child.first_name || "-"} ${child.last_name || ""}`.trim()} | Birth date {formatDate(child.birth_date)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCreateLinkOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleCreateLink} disabled={saving}>
+            {saving ? "Linking..." : "Save link"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </AppShell>
   );
 }

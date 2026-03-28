@@ -95,6 +95,12 @@ export class VisitService {
         throw new BadRequestException('Cannot create a visit for a cancelled appointment');
       }
 
+      if (appointment.approval_status !== 'approved') {
+        throw new BadRequestException(
+          'Appointment must be approved by admin before creating a visit',
+        );
+      }
+
       if (appointment.visit) {
         throw new BadRequestException('Visit already exists for this appointment');
       }
@@ -142,6 +148,7 @@ export class VisitService {
       }
 
       await this.syncPrescriptions(tx, visit.visit_id, dto.prescriptions);
+      await this.syncServiceItems(user, tx, visit.visit_id, dto.service_items);
 
       await tx.appointments.update({
         where: { appointment_id: dto.appointment_id },
@@ -231,6 +238,10 @@ export class VisitService {
 
       if (dto.prescriptions !== undefined) {
         await this.syncPrescriptions(tx, visitId, dto.prescriptions);
+      }
+
+      if (dto.service_items !== undefined) {
+        await this.syncServiceItems(user, tx, visitId, dto.service_items);
       }
 
       if (existingVisit.appointment_id) {
@@ -463,6 +474,27 @@ export class VisitService {
     }
   }
 
+  private async syncServiceItems(
+    user: AuthUser,
+    tx: Prisma.TransactionClient,
+    visitId: number,
+    items:
+      | Array<{
+          description: string;
+          qty: number;
+          unit_price: number;
+        }>
+      | undefined,
+  ) {
+    if (items === undefined) {
+      return;
+    }
+
+    this.invoiceService.ensureServicePriceManager(user);
+
+    await this.invoiceService.syncInvoiceForVisitTx(tx, visitId, items);
+  }
+
   private toVitalSignsWriteData(vitalSigns: UpsertVitalSignsDto) {
     return {
       ...(vitalSigns.weight_kg !== undefined ? { weight_kg: vitalSigns.weight_kg } : {}),
@@ -488,6 +520,18 @@ export class VisitService {
               first_name: true,
               last_name: true,
               birth_date: true,
+            },
+          },
+          booked_by: {
+            select: {
+              user_id: true,
+              username: true,
+              parent: {
+                select: {
+                  first_name: true,
+                  last_name: true,
+                },
+              },
             },
           },
           room: true,
@@ -565,8 +609,10 @@ export class VisitService {
         ? {
             appointment_id: visit.appointments.appointment_id,
             status: visit.appointments.status,
+            approval_status: visit.appointments.approval_status,
             patient_id: visit.appointments.patient_id,
             patient: visit.appointments.child,
+            booked_by: visit.appointments.booked_by,
             room: visit.appointments.room,
             schedule: visit.appointments.work_schedules,
           }
