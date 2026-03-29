@@ -315,7 +315,7 @@ export default function StaffVisitsClient() {
     setForm({
       ...emptyForm,
       appointment_id: appointmentId || "",
-      visit_date: new Date().toISOString().slice(0, 16),
+      visit_date: localDateTimeString(),
     });
     setPrescriptionItems([createPrescriptionItem()]);
   }, [requestedAppointmentId]);
@@ -871,6 +871,12 @@ export default function StaffVisitsClient() {
   );
 }
 
+function localDateTimeString() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+}
+
 function normalizeError(error: AxiosError<ApiErrorResponse>, fallback: string) {
   const message = error.response?.data?.message;
   return Array.isArray(message) ? message.join(", ") : (message ?? fallback);
@@ -879,7 +885,7 @@ function normalizeError(error: AxiosError<ApiErrorResponse>, fallback: string) {
 function toFormState(visit: VisitRecord): VisitFormState {
   return {
     appointment_id: String(visit.appointment_id ?? ""),
-    visit_date: visit.visit_date ? visit.visit_date.slice(0, 16) : new Date().toISOString().slice(0, 16),
+    visit_date: visit.visit_date ? visit.visit_date.slice(0, 16) : localDateTimeString(),
     weight_kg: visit.vital_signs?.weight_kg?.toString() ?? "",
     height_cm: visit.vital_signs?.height_cm?.toString() ?? "",
     bp_systolic: visit.vital_signs?.bp_systolic?.toString() ?? "",
