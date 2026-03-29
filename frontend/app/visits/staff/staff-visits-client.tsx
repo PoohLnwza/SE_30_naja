@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
@@ -251,9 +251,17 @@ export default function StaffVisitsClient() {
   );
   const filteredVisits = useMemo(
     () =>
-      visits.filter((visit) =>
-        `${visit.appointment?.patient?.first_name ?? ""} ${visit.appointment?.patient?.last_name ?? ""} ${visit.appointment?.booked_by?.parent?.[0]?.first_name ?? ""} ${visit.appointment?.booked_by?.parent?.[0]?.last_name ?? ""}`.toLowerCase().includes(visitQuery.toLowerCase()),
-      ),
+      [...visits]
+        .filter((visit) =>
+          `${visit.appointment?.patient?.first_name ?? ""} ${visit.appointment?.patient?.last_name ?? ""} ${visit.appointment?.booked_by?.parent?.[0]?.first_name ?? ""} ${visit.appointment?.booked_by?.parent?.[0]?.last_name ?? ""}`
+            .toLowerCase()
+            .includes(visitQuery.toLowerCase()),
+        )
+        .sort((left, right) => {
+          const leftTime = left.visit_date ? new Date(left.visit_date).getTime() : 0;
+          const rightTime = right.visit_date ? new Date(right.visit_date).getTime() : 0;
+          return rightTime - leftTime;
+        }),
     [visitQuery, visits],
   );
   const pagedAppointments = useMemo(
@@ -291,6 +299,26 @@ export default function StaffVisitsClient() {
       work_schedules: selectedVisit.appointment.schedule,
     };
   }, [appointments, form.appointment_id, selectedVisit]);
+
+  const selectVisit = useCallback((visit: VisitRecord) => {
+    setSelectedVisitId(visit.visit_id);
+    setSuccess("");
+    setError("");
+    setForm(toFormState(visit));
+    setPrescriptionItems(toPrescriptionFormState(visit));
+  }, []);
+
+  const resetEditor = useCallback((appointmentId = requestedAppointmentId) => {
+    setSelectedVisitId(null);
+    setSuccess("");
+    setError("");
+    setForm({
+      ...emptyForm,
+      appointment_id: appointmentId || "",
+      visit_date: new Date().toISOString().slice(0, 16),
+    });
+    setPrescriptionItems([createPrescriptionItem()]);
+  }, [requestedAppointmentId]);
 
   useEffect(() => {
     const load = async () => {
@@ -342,7 +370,7 @@ export default function StaffVisitsClient() {
     };
 
     load();
-  }, [requestedAppointmentId, router]);
+  }, [requestedAppointmentId, resetEditor, router, selectVisit]);
 
   const handleChange = (
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -407,26 +435,6 @@ export default function StaffVisitsClient() {
     }));
   };
 
-  const selectVisit = (visit: VisitRecord) => {
-    setSelectedVisitId(visit.visit_id);
-    setSuccess("");
-    setError("");
-    setForm(toFormState(visit));
-    setPrescriptionItems(toPrescriptionFormState(visit));
-  };
-
-  const resetEditor = (appointmentId = requestedAppointmentId) => {
-    setSelectedVisitId(null);
-    setSuccess("");
-    setError("");
-    setForm({
-      ...emptyForm,
-      appointment_id: appointmentId || "",
-      visit_date: new Date().toISOString().slice(0, 16),
-    });
-    setPrescriptionItems([createPrescriptionItem()]);
-  };
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -473,8 +481,8 @@ export default function StaffVisitsClient() {
 
   return (
     <AppShell
-      title="Visit Records"
-      subtitle="Capture the clinical visit, medication orders, and resulting invoice in one connected workspace."
+      title="Visit Record Workspace"
+      subtitle="ดู appointment ทั้งหมด, appointment ที่ผ่านมา, สร้าง visit record และสรุปบิลได้ในหน้าเดียว."
       navTitle="Clinic Ops"
       navItems={staffNav(profile)}
       badge="Visit"
@@ -486,7 +494,7 @@ export default function StaffVisitsClient() {
             New visit record
           </Button>
           <Button variant="outlined" onClick={() => router.push("/appointments/staff")}>
-            Back to appointments
+            Appointment management
           </Button>
         </>
       }
@@ -503,27 +511,27 @@ export default function StaffVisitsClient() {
       )}
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2} mb={3}>
-        <StatCard label="Visits" value={visits.length} helper="Saved encounter records" />
-        <StatCard label="Open appointments" value={availableAppointments.length} helper="Appointments ready to document" />
+        <StatCard label="All appointments" value={appointments.length} helper="Rows in this workspace" />
+        <StatCard label="Past appointments" value={visits.length} helper="Visit records already saved" />
+        <StatCard label="Ready to create" value={availableAppointments.length} helper="Approved appointments" />
         <StatCard
           label="Medications"
           value={selectedVisit ? selectedVisit.prescriptions.flatMap((item) => item.items).length : 0}
           helper="Current visit prescription lines"
         />
-        <StatCard label="Workspace" value={canManageVisits ? "Edit" : "View"} helper="Role-based access mode" />
       </Box>
 
-      <Box display="grid" gridTemplateColumns={{ xs: "1fr", xl: "0.9fr 1.1fr" }} gap={2.5}>
+      <Box display="grid" gridTemplateColumns={{ xs: "1fr", xl: "0.88fr 1.18fr 0.82fr" }} gap={2.5}>
         <Stack spacing={2.5}>
           <DashboardCard>
-            <Typography variant="h5">Appointment queue</Typography>
+            <Typography variant="h5">All appointments</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              Start from a booked appointment, or reopen an existing visit for review.
+              เริ่มสร้าง visit จาก appointment ที่อนุมัติแล้ว หรือเปิด record เดิมจากรายการเดียวกันได้เลย
             </Typography>
             <TextField
               sx={{ mt: 2.25 }}
               fullWidth
-              label="Search appointment queue"
+              label="Search all appointments"
               value={appointmentQuery}
               onChange={(event) => {
                 setAppointmentQuery(event.target.value);
@@ -614,11 +622,14 @@ export default function StaffVisitsClient() {
           </DashboardCard>
 
           <DashboardCard>
-            <Typography variant="h5">Saved visit records</Typography>
+            <Typography variant="h5">Past appointments</Typography>
+            <Typography color="text.secondary" sx={{ mt: 0.75 }}>
+              appointment ที่เคยสร้าง visit record แล้วจะอยู่ส่วนนี้ เพื่อกลับมาแก้ไขและตรวจบิลได้จากหน้าเดิม
+            </Typography>
             <TextField
               sx={{ mt: 2.25 }}
               fullWidth
-              label="Search visit records"
+              label="Search past appointments"
               value={visitQuery}
               onChange={(event) => {
                 setVisitQuery(event.target.value);
@@ -628,7 +639,7 @@ export default function StaffVisitsClient() {
             />
             <Stack spacing={1.5} sx={{ mt: 2.25 }}>
               {visits.length === 0 && (
-                <Typography color="text.secondary">No visit records saved yet.</Typography>
+                <Typography color="text.secondary">No past appointments yet.</Typography>
               )}
               {pagedVisits.map((visit) => (
                 <Box
@@ -680,7 +691,7 @@ export default function StaffVisitsClient() {
           <DashboardCard>
             <Typography variant="h5">{selectedVisitId ? "Update visit record" : "Create visit record"}</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              One record per appointment. Medication changes update the visit prescription and invoice together.
+              ฟอร์มนี้ใช้สร้างหรือแก้ visit record โดยไม่ต้องสลับหน้าออกไปไหน
             </Typography>
 
             {!canManageVisits && (
@@ -922,12 +933,36 @@ export default function StaffVisitsClient() {
               </Stack>
             </Box>
           </DashboardCard>
+        </Stack>
 
+        <Stack spacing={2.5}>
           <DashboardCard>
             <Typography variant="h5">Invoice summary</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              Drug lines below are generated from the current visit prescription.
+              ด้านขวาจะสรุปบิลของ visit ที่กำลังเปิดอยู่ตลอด เพื่อให้เช็กค่ารักษาและค่ายาได้ในหน้าเดียว
             </Typography>
+
+            {selectedAppointment && (
+              <Box
+                sx={{
+                  mt: 2.25,
+                  p: 2,
+                  borderRadius: 4,
+                  background: "rgba(255,255,255,0.56)",
+                  border: "1px solid rgba(122, 156, 156, 0.14)",
+                }}
+              >
+                <Typography sx={{ fontWeight: 700 }}>
+                  {selectedAppointment.child?.first_name || "-"} {selectedAppointment.child?.last_name || ""}
+                </Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                  {formatDate(selectedAppointment.work_schedules?.work_date || null)} | {formatTime(selectedAppointment.work_schedules?.start_time || null)} - {formatTime(selectedAppointment.work_schedules?.end_time || null)}
+                </Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                  Specialist: {selectedAppointment.work_schedules?.staff?.first_name || "-"} {selectedAppointment.work_schedules?.staff?.last_name || ""}
+                </Typography>
+              </Box>
+            )}
 
             {!currentInvoice && (
               <Typography color="text.secondary" sx={{ mt: 2.25 }}>

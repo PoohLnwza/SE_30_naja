@@ -183,7 +183,7 @@ export default function StaffSchedulesPage() {
                         Delete
                       </Button>
                     ) : schedule.appointments.approval_status === "approved" ? (
-                      <Button variant="contained" onClick={() => router.push(`/visits/staff/editor?appointmentId=${schedule.appointments?.appointment_id}`)}>
+                      <Button variant="contained" onClick={() => router.push(`/visits/staff?appointmentId=${schedule.appointments?.appointment_id}`)}>
                         Open visit
                       </Button>
                     ) : (

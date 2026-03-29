@@ -342,7 +342,7 @@ export default function StaffAppointmentsPage() {
                           </Button>
                         )}
                         {appointment.status !== "cancelled" && appointment.approval_status === "approved" && (
-                          <Button size="small" variant="contained" onClick={() => router.push(`/visits/staff/editor?appointmentId=${appointment.appointment_id}`)}>
+                          <Button size="small" variant="contained" onClick={() => router.push(`/visits/staff?appointmentId=${appointment.appointment_id}`)}>
                             Visit record
                           </Button>
                         )}
@@ -392,7 +392,7 @@ export default function StaffAppointmentsPage() {
                             Delete
                           </Button>
                         ) : schedule.appointments.approval_status === "approved" ? (
-                          <Button size="small" variant="contained" onClick={() => router.push(`/visits/staff/editor?appointmentId=${schedule.appointments?.appointment_id}`)}>
+                          <Button size="small" variant="contained" onClick={() => router.push(`/visits/staff?appointmentId=${schedule.appointments?.appointment_id}`)}>
                             Open visit
                           </Button>
                         ) : (
