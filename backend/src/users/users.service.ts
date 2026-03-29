@@ -455,7 +455,8 @@ export class UsersService {
         throw new BadRequestException('Unsupported staff role');
       }
 
-      const publicRole = this.toPublicRoleName(normalizedRole) || normalizedRole;
+      const publicRole =
+        this.toPublicRoleName(normalizedRole) || normalizedRole;
       const roleRecord = await tx.roles.upsert({
         where: { role_name: publicRole },
         update: {},
@@ -584,15 +585,21 @@ export class UsersService {
       this.prisma.prescription.count({
         where:
           publicRole === 'doctor'
-            ? ({
+            ? {
                 visit: {
-                  appointment: {
-                    work_schedules: {
-                      staff_id: currentStaffId,
+                  is: {
+                    appointments: {
+                      is: {
+                        work_schedules: {
+                          is: {
+                            staff_id: currentStaffId,
+                          },
+                        },
+                      },
                     },
                   },
                 },
-              } as any)
+              }
             : undefined,
       }),
     ]);
@@ -797,7 +804,9 @@ export class UsersService {
         is_active: item.users.is_active,
         children: item.child_parent
           .map((link) => link.child)
-          .filter((child): child is NonNullable<typeof child> => Boolean(child)),
+          .filter((child): child is NonNullable<typeof child> =>
+            Boolean(child),
+          ),
       })),
       drugs: drugs.map((item) => ({
         drug_id: item.drug_id,

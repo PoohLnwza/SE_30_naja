@@ -78,7 +78,7 @@ export class VisitService {
   async createVisit(user: AuthUser, dto: CreateVisitDto) {
     this.ensureVisitManager(user);
 
-    return this.prisma.$transaction(
+    const visitId = await this.prisma.$transaction(
       async (tx) => {
         const appointment = await tx.appointments.findUnique({
           where: { appointment_id: dto.appointment_id },
@@ -156,40 +156,38 @@ export class VisitService {
         }
 
         await this.syncPrescriptions(tx, visit.visit_id, dto.prescriptions);
-        await this.syncServiceItems(
-          user,
-          tx,
-          visit.visit_id,
-          dto.service_items,
-        );
 
         await tx.appointments.update({
           where: { appointment_id: dto.appointment_id },
           data: { status: 'completed' },
         });
 
-        const createdVisit = await tx.visit.findUnique({
-          where: { visit_id: visit.visit_id },
-          include: this.visitInclude(),
-        });
-
-        if (!createdVisit) {
-          throw new NotFoundException('Visit not found after creation');
-        }
-
-        return this.serializeVisit(createdVisit);
+        return visit.visit_id;
       },
       {
         maxWait: 10000,
         timeout: 20000,
       },
     );
+
+    await this.syncVisitInvoice(user, visitId, dto);
+
+    const createdVisit = await this.prisma.visit.findUnique({
+      where: { visit_id: visitId },
+      include: this.visitInclude(),
+    });
+
+    if (!createdVisit) {
+      throw new NotFoundException('Visit not found after creation');
+    }
+
+    return this.serializeVisit(createdVisit);
   }
 
   async updateVisit(user: AuthUser, visitId: number, dto: UpdateVisitDto) {
     this.ensureVisitManager(user);
 
-    return this.prisma.$transaction(
+    const updatedVisitId = await this.prisma.$transaction(
       async (tx) => {
         const existingVisit = await tx.visit.findUnique({
           where: { visit_id: visitId },
@@ -259,10 +257,6 @@ export class VisitService {
           await this.syncPrescriptions(tx, visitId, dto.prescriptions);
         }
 
-        if (dto.service_items !== undefined) {
-          await this.syncServiceItems(user, tx, visitId, dto.service_items);
-        }
-
         if (existingVisit.appointment_id) {
           await tx.appointments.update({
             where: { appointment_id: existingVisit.appointment_id },
@@ -270,22 +264,26 @@ export class VisitService {
           });
         }
 
-        const updatedVisit = await tx.visit.findUnique({
-          where: { visit_id: visitId },
-          include: this.visitInclude(),
-        });
-
-        if (!updatedVisit) {
-          throw new NotFoundException('Visit not found after update');
-        }
-
-        return this.serializeVisit(updatedVisit);
+        return visitId;
       },
       {
         maxWait: 10000,
         timeout: 20000,
       },
     );
+
+    await this.syncVisitInvoice(user, updatedVisitId, dto);
+
+    const updatedVisit = await this.prisma.visit.findUnique({
+      where: { visit_id: updatedVisitId },
+      include: this.visitInclude(),
+    });
+
+    if (!updatedVisit) {
+      throw new NotFoundException('Visit not found after update');
+    }
+
+    return this.serializeVisit(updatedVisit);
   }
 
   private async buildVisitWhere(user: AuthUser, filters: VisitFilters) {
@@ -414,6 +412,18 @@ export class VisitService {
     );
 
     if (allPrescriptionIds.length > 0) {
+      await tx.invoice_item.deleteMany({
+        where: {
+          prescription_item: {
+            is: {
+              prescription_id: {
+                in: allPrescriptionIds,
+              },
+            },
+          },
+        },
+      });
+
       await tx.prescription_item.deleteMany({
         where: {
           prescription_id: {
@@ -434,7 +444,6 @@ export class VisitService {
     }
 
     if (!primaryPrescription) {
-      await this.syncInvoiceAfterPrescriptionChange(tx, visitId);
       return;
     }
 
@@ -444,7 +453,6 @@ export class VisitService {
           prescription_id: primaryPrescription.prescription_id,
         },
       });
-      await this.syncInvoiceAfterPrescriptionChange(tx, visitId);
       return;
     }
 
@@ -473,8 +481,6 @@ export class VisitService {
         quantity: item.quantity,
       })),
     });
-
-    await this.syncInvoiceAfterPrescriptionChange(tx, visitId);
   }
 
   private normalizePrescriptionItems(items: UpsertPrescriptionItemDto[]) {
@@ -493,43 +499,20 @@ export class VisitService {
     }));
   }
 
-  private async syncInvoiceAfterPrescriptionChange(
-    tx: Prisma.TransactionClient,
-    visitId: number,
-  ) {
-    try {
-      await this.invoiceService.syncInvoiceForVisitTx(tx, visitId);
-    } catch (error) {
-      if (
-        error instanceof NotFoundException &&
-        error.message === 'Invoice not found for this visit'
-      ) {
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  private async syncServiceItems(
+  private async syncVisitInvoice(
     user: AuthUser,
-    tx: Prisma.TransactionClient,
     visitId: number,
-    items:
-      | Array<{
-          description: string;
-          qty: number;
-          unit_price: number;
-        }>
-      | undefined,
+    dto: Pick<UpdateVisitDto, 'prescriptions' | 'service_items'>,
   ) {
-    if (items === undefined) {
+    if (dto.service_items !== undefined) {
+      this.invoiceService.ensureServicePriceManager(user);
+      await this.invoiceService.syncInvoiceForVisit(visitId, dto.service_items);
       return;
     }
 
-    this.invoiceService.ensureServicePriceManager(user);
-
-    await this.invoiceService.syncInvoiceForVisitTx(tx, visitId, items);
+    if (dto.prescriptions !== undefined) {
+      await this.invoiceService.syncInvoiceForVisit(visitId);
+    }
   }
 
   private toVitalSignsWriteData(vitalSigns: UpsertVitalSignsDto) {

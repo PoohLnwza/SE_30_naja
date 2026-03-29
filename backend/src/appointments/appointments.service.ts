@@ -128,7 +128,9 @@ export class AppointmentsService {
     const children =
       parentRecord?.child_parent
         .map((item) => item.child)
-        .filter((child): child is NonNullable<typeof child> => Boolean(child)) ?? [];
+        .filter((child): child is NonNullable<typeof child> =>
+          Boolean(child),
+        ) ?? [];
 
     return { children, rooms };
   }
@@ -201,7 +203,10 @@ export class AppointmentsService {
       throw new NotFoundException('Schedule not found');
     }
 
-    if (schedule.staff_id !== staff.staff_id && !this.hasRole(user, ['admin'])) {
+    if (
+      schedule.staff_id !== staff.staff_id &&
+      !this.hasRole(user, ['admin'])
+    ) {
       throw new ForbiddenException('You can only edit your own schedules');
     }
 
@@ -209,8 +214,10 @@ export class AppointmentsService {
       throw new BadRequestException('Booked schedules cannot be edited');
     }
 
-    const mergedDate = data.work_date ?? this.formatDateInput(schedule.work_date);
-    const mergedStart = data.start_time ?? this.formatTimeInput(schedule.start_time);
+    const mergedDate =
+      data.work_date ?? this.formatDateInput(schedule.work_date);
+    const mergedStart =
+      data.start_time ?? this.formatTimeInput(schedule.start_time);
     const mergedEnd = data.end_time ?? this.formatTimeInput(schedule.end_time);
     const normalized = this.normalizeScheduleInput({
       work_date: mergedDate,
@@ -250,7 +257,10 @@ export class AppointmentsService {
       throw new NotFoundException('Schedule not found');
     }
 
-    if (schedule.staff_id !== staff.staff_id && !this.hasRole(user, ['admin'])) {
+    if (
+      schedule.staff_id !== staff.staff_id &&
+      !this.hasRole(user, ['admin'])
+    ) {
       throw new ForbiddenException('You can only delete your own schedules');
     }
 
@@ -303,7 +313,8 @@ export class AppointmentsService {
         include: { child_parent: true },
       });
 
-      const childIds = parentRecord?.child_parent.map((item) => item.child_id) ?? [];
+      const childIds =
+        parentRecord?.child_parent.map((item) => item.child_id) ?? [];
       where.patient_id = { in: childIds.length > 0 ? childIds : [-1] };
     }
 
@@ -313,7 +324,9 @@ export class AppointmentsService {
         workScheduleFilter = {
           is: {
             ...(date ? { work_date: this.toDayRange(date) } : {}),
-            ...(range !== 'all' ? { work_date: this.buildRangeWindow(range) } : {}),
+            ...(range !== 'all'
+              ? { work_date: this.buildRangeWindow(range) }
+              : {}),
             staff_id: staffRecord.staff_id,
           },
         };
@@ -368,15 +381,141 @@ export class AppointmentsService {
   }
 
   async bookAppointment(user: AuthUser, data: BookAppointmentPayload) {
-    return this.prisma.$transaction(async (tx) => {
-      if (data.patient_id) {
-        const child = await tx.child.findUnique({
-          where: { child_id: data.patient_id },
-          select: { child_id: true },
+    return this.prisma.$transaction(
+      async (tx) => {
+        if (data.patient_id) {
+          const child = await tx.child.findUnique({
+            where: { child_id: data.patient_id },
+            select: { child_id: true },
+          });
+
+          if (!child) {
+            throw new NotFoundException('Patient not found');
+          }
+
+          if (user.user_type === 'parent') {
+            const parentRecord = await tx.parent.findFirst({
+              where: { user_id: user.user_id },
+              include: { child_parent: true },
+            });
+
+            const childIds =
+              parentRecord?.child_parent.map((item) => item.child_id) ?? [];
+            if (!childIds.includes(data.patient_id)) {
+              throw new ForbiddenException(
+                'You can only book for your own child',
+              );
+            }
+          }
+        }
+
+        if (
+          user.user_type === 'staff' &&
+          this.hasRole(user, ['doctor', 'psychologist'])
+        ) {
+          throw new ForbiddenException(
+            'Doctors cannot book appointments directly',
+          );
+        }
+
+        if (data.room_id) {
+          const room = await tx.room.findUnique({
+            where: { room_id: data.room_id },
+            select: { room_id: true },
+          });
+
+          if (!room) {
+            throw new NotFoundException('Room not found');
+          }
+        }
+
+        const schedule = await tx.work_schedules.findUnique({
+          where: { schedule_id: data.schedule_id },
+          include: { appointments: true },
         });
 
-        if (!child) {
-          throw new NotFoundException('Patient not found');
+        if (!schedule) {
+          throw new NotFoundException('Schedule not found');
+        }
+
+        if (schedule.slot_status !== 'available') {
+          throw new BadRequestException('This schedule is no longer available');
+        }
+
+        if (
+          schedule.appointments &&
+          schedule.appointments.status !== 'cancelled'
+        ) {
+          throw new BadRequestException(
+            'This schedule already has an appointment',
+          );
+        }
+
+        this.ensureScheduleBookable(schedule);
+
+        const appointment = schedule.appointments
+          ? await tx.appointments.update({
+              where: { appointment_id: schedule.appointments.appointment_id },
+              data: {
+                patient_id: data.patient_id ?? null,
+                schedule_id: data.schedule_id,
+                room_id: data.room_id ?? null,
+                booked_by_user_id: user.user_id,
+                status: 'scheduled',
+                approval_status: 'pending',
+                deleted_at: null,
+              },
+              include: {
+                child: true,
+                work_schedules: {
+                  include: {
+                    staff: true,
+                  },
+                },
+                room: true,
+              },
+            })
+          : await tx.appointments.create({
+              data: {
+                patient_id: data.patient_id ?? null,
+                schedule_id: data.schedule_id,
+                room_id: data.room_id ?? null,
+                booked_by_user_id: user.user_id,
+                status: 'scheduled',
+                approval_status: 'pending',
+              },
+              include: {
+                child: true,
+                work_schedules: {
+                  include: {
+                    staff: true,
+                  },
+                },
+                room: true,
+              },
+            });
+
+        await tx.work_schedules.update({
+          where: { schedule_id: data.schedule_id },
+          data: { slot_status: 'booked' },
+        });
+
+        return appointment;
+      },
+      { timeout: 15000 },
+    );
+  }
+
+  async cancelAppointment(user: AuthUser, appointmentId: number) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const appointment = await tx.appointments.findUnique({
+          where: { appointment_id: appointmentId },
+          include: { work_schedules: true },
+        });
+
+        if (!appointment) {
+          throw new NotFoundException('Appointment not found');
         }
 
         if (user.user_type === 'parent') {
@@ -385,124 +524,47 @@ export class AppointmentsService {
             include: { child_parent: true },
           });
 
-          const childIds = parentRecord?.child_parent.map((item) => item.child_id) ?? [];
-          if (!childIds.includes(data.patient_id)) {
-            throw new ForbiddenException('You can only book for your own child');
+          const childIds =
+            parentRecord?.child_parent.map((item) => item.child_id) ?? [];
+          if (!childIds.includes(Number(appointment.patient_id))) {
+            throw new ForbiddenException(
+              'You do not have access to this appointment',
+            );
           }
         }
-      }
 
-      if (user.user_type === 'staff' && this.hasRole(user, ['doctor', 'psychologist'])) {
-        throw new ForbiddenException('Doctors cannot book appointments directly');
-      }
+        if (
+          user.user_type === 'staff' &&
+          this.hasRole(user, ['doctor', 'psychologist'])
+        ) {
+          const staffRecord = await this.getStaffRecord(user.user_id, tx);
+          if (appointment.work_schedules?.staff_id !== staffRecord.staff_id) {
+            throw new ForbiddenException(
+              'You can only cancel your own appointments',
+            );
+          }
+        }
 
-      if (data.room_id) {
-        const room = await tx.room.findUnique({
-          where: { room_id: data.room_id },
-          select: { room_id: true },
+        if (appointment.status === 'cancelled') {
+          return appointment;
+        }
+
+        const updatedAppointment = await tx.appointments.update({
+          where: { appointment_id: appointmentId },
+          data: { status: 'cancelled' },
         });
 
-        if (!room) {
-          throw new NotFoundException('Room not found');
+        if (appointment.schedule_id) {
+          await tx.work_schedules.update({
+            where: { schedule_id: appointment.schedule_id },
+            data: { slot_status: 'available' },
+          });
         }
-      }
 
-      const schedule = await tx.work_schedules.findUnique({
-        where: { schedule_id: data.schedule_id },
-        include: { appointments: true },
-      });
-
-      if (!schedule) {
-        throw new NotFoundException('Schedule not found');
-      }
-
-      if (schedule.slot_status !== 'available') {
-        throw new BadRequestException('This schedule is no longer available');
-      }
-
-      if (schedule.appointments && schedule.appointments.status !== 'cancelled') {
-        throw new BadRequestException('This schedule already has an appointment');
-      }
-
-      this.ensureScheduleBookable(schedule);
-
-      const appointment = await tx.appointments.create({
-        data: {
-          patient_id: data.patient_id ?? null,
-          schedule_id: data.schedule_id,
-          room_id: data.room_id ?? null,
-          booked_by_user_id: user.user_id,
-          status: 'scheduled',
-          approval_status: 'pending',
-        },
-        include: {
-          child: true,
-          work_schedules: {
-            include: {
-              staff: true,
-            },
-          },
-          room: true,
-        },
-      });
-
-      await tx.work_schedules.update({
-        where: { schedule_id: data.schedule_id },
-        data: { slot_status: 'booked' },
-      });
-
-      return appointment;
-    }, { timeout: 15000 });
-  }
-
-  async cancelAppointment(user: AuthUser, appointmentId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const appointment = await tx.appointments.findUnique({
-        where: { appointment_id: appointmentId },
-        include: { work_schedules: true },
-      });
-
-      if (!appointment) {
-        throw new NotFoundException('Appointment not found');
-      }
-
-      if (user.user_type === 'parent') {
-        const parentRecord = await tx.parent.findFirst({
-          where: { user_id: user.user_id },
-          include: { child_parent: true },
-        });
-
-        const childIds = parentRecord?.child_parent.map((item) => item.child_id) ?? [];
-        if (!childIds.includes(Number(appointment.patient_id))) {
-          throw new ForbiddenException('You do not have access to this appointment');
-        }
-      }
-
-      if (user.user_type === 'staff' && this.hasRole(user, ['doctor', 'psychologist'])) {
-        const staffRecord = await this.getStaffRecord(user.user_id, tx);
-        if (appointment.work_schedules?.staff_id !== staffRecord.staff_id) {
-          throw new ForbiddenException('You can only cancel your own appointments');
-        }
-      }
-
-      if (appointment.status === 'cancelled') {
-        return appointment;
-      }
-
-      const updatedAppointment = await tx.appointments.update({
-        where: { appointment_id: appointmentId },
-        data: { status: 'cancelled' },
-      });
-
-      if (appointment.schedule_id) {
-        await tx.work_schedules.update({
-          where: { schedule_id: appointment.schedule_id },
-          data: { slot_status: 'available' },
-        });
-      }
-
-      return updatedAppointment;
-    }, { timeout: 15000 });
+        return updatedAppointment;
+      },
+      { timeout: 15000 },
+    );
   }
 
   async updateAppointmentApproval(
@@ -527,7 +589,9 @@ export class AppointmentsService {
       }
 
       if (appointment.status === 'completed') {
-        throw new BadRequestException('Completed appointments cannot change approval status');
+        throw new BadRequestException(
+          'Completed appointments cannot change approval status',
+        );
       }
 
       const shouldReject = data.approval_status === 'rejected';
@@ -535,7 +599,9 @@ export class AppointmentsService {
         where: { appointment_id: appointmentId },
         data: {
           approval_status: data.approval_status,
-          ...(shouldReject && appointment.status !== 'cancelled' ? { status: 'cancelled' } : {}),
+          ...(shouldReject && appointment.status !== 'cancelled'
+            ? { status: 'cancelled' }
+            : {}),
         },
       });
 
@@ -627,7 +693,9 @@ export class AppointmentsService {
 
     const startDateTime = this.toScheduleDateTime(workDate, startTime);
     if (startDateTime < this.getNow()) {
-      throw new BadRequestException('Cannot create or update schedules in the past');
+      throw new BadRequestException(
+        'Cannot create or update schedules in the past',
+      );
     }
 
     return { workDate, startTime, endTime };
@@ -674,7 +742,9 @@ export class AppointmentsService {
 
   private startOfToday() {
     const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    return new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
   }
 
   private buildRangeWindow(range: AppointmentRange) {
@@ -695,19 +765,32 @@ export class AppointmentsService {
     return { gte: start, lt: end };
   }
 
-  private ensureScheduleBookable(schedule: { work_date: Date | null; start_time: Date | null }) {
+  private ensureScheduleBookable(schedule: {
+    work_date: Date | null;
+    start_time: Date | null;
+  }) {
     if (!this.isScheduleBookable(schedule)) {
-      throw new BadRequestException('Appointments must be booked at least 1 hour in advance');
+      throw new BadRequestException(
+        'Appointments must be booked at least 1 hour in advance',
+      );
     }
   }
 
-  private isScheduleBookable(schedule: { work_date: Date | null; start_time: Date | null }) {
+  private isScheduleBookable(schedule: {
+    work_date: Date | null;
+    start_time: Date | null;
+  }) {
     if (!schedule.work_date || !schedule.start_time) {
       return false;
     }
 
-    const scheduleDateTime = this.toScheduleDateTime(schedule.work_date, schedule.start_time);
-    return scheduleDateTime.getTime() - this.getNow().getTime() >= 60 * 60 * 1000;
+    const scheduleDateTime = this.toScheduleDateTime(
+      schedule.work_date,
+      schedule.start_time,
+    );
+    return (
+      scheduleDateTime.getTime() - this.getNow().getTime() >= 60 * 60 * 1000
+    );
   }
 
   private toScheduleDateTime(workDate: Date, timeValue: Date) {
@@ -747,7 +830,9 @@ export class AppointmentsService {
     });
 
     if (existingSchedule) {
-      throw new BadRequestException('This time overlaps with an existing schedule');
+      throw new BadRequestException(
+        'This time overlaps with an existing schedule',
+      );
     }
   }
 

@@ -110,9 +110,12 @@ export class InvoiceService {
     };
   }
 
-  async syncInvoiceForVisit(visitId: number) {
+  async syncInvoiceForVisit(
+    visitId: number,
+    serviceItems?: ServiceItemInput[],
+  ) {
     return this.prisma.$transaction(
-      (tx) => this.syncInvoiceForVisitTx(tx, visitId),
+      (tx) => this.syncInvoiceForVisitTx(tx, visitId, serviceItems),
       {
         maxWait: 10000,
         timeout: 20000,
