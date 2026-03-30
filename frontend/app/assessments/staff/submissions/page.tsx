@@ -1,17 +1,21 @@
 "use client";
 
 import type { AxiosError } from "axios";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Alert,
   Box,
   Button,
   Chip,
-  Stack,
-  Typography,
+  MenuItem,
+  TableCell,
+  TableRow,
+  TextField,
 } from "@mui/material";
-import { AppShell, DashboardCard, PageSkeleton, StatCard } from "@/app/components/app-shell";
+import { AppShell, PageSkeleton, StatCard } from "@/app/components/app-shell";
+import { SearchSettingsCard } from "@/app/components/search-settings-card";
+import { PaginatedTableCard } from "@/app/components/paginated-table-card";
 import { staffNav } from "@/app/components/navigation";
 import api from "@/lib/api";
 import type { Profile } from "@/lib/access";
@@ -47,12 +51,36 @@ type ApiErrorResponse = {
   message?: string | string[];
 };
 
+const pageSize = 8;
+
+function isInRange(dateStr: string, range: string): boolean {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (range === "today") return date >= startOfDay;
+  if (range === "week") {
+    const weekAgo = new Date(startOfDay);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    return date >= weekAgo;
+  }
+  if (range === "month") {
+    const monthAgo = new Date(startOfDay);
+    monthAgo.setDate(monthAgo.getDate() - 30);
+    return date >= monthAgo;
+  }
+  return true;
+}
+
 export default function RecentSubmissionsPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [dashboard, setDashboard] = useState<StaffAssessmentDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [rangeFilter, setRangeFilter] = useState("all");
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,12 +110,36 @@ export default function RecentSubmissionsPage() {
     void load();
   }, [load]);
 
+  const results = dashboard?.recentResults ?? [];
+
+  const filtered = useMemo(() => {
+    return results.filter((r) => {
+      const haystack = `${r.child?.first_name ?? ""} ${r.child?.last_name ?? ""} ${r.assessment?.name ?? ""}`.toLowerCase();
+      const matchText = haystack.includes(query.toLowerCase());
+      const matchRange = isInRange(r.assessed_at, rangeFilter);
+      const matchSeverity = severityFilter === "all" || r.band?.severity_level === severityFilter;
+      return matchText && matchRange && matchSeverity;
+    });
+  }, [results, query, rangeFilter, severityFilter]);
+
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  const severityColor = (level: string) => {
+    switch (level) {
+      case "normal": return "success";
+      case "mild": return "info";
+      case "moderate": return "warning";
+      case "severe": return "error";
+      default: return "default";
+    }
+  };
+
   if (loading) return <PageSkeleton />;
 
   return (
     <AppShell
       title="Recent submissions"
-      subtitle="View all recent child assessment submissions across all templates."
+      subtitle="View all child assessment submissions. Filter by date, severity, or child name."
       navTitle="Clinic Ops"
       navItems={staffNav(profile)}
       badge="Staff"
@@ -95,6 +147,9 @@ export default function RecentSubmissionsPage() {
       profileMeta="Assessment operations"
       actions={
         <>
+          <Button variant="outlined" onClick={() => router.back()}>
+            Back
+          </Button>
           <Button variant="outlined" onClick={() => router.push("/assessments/staff")}>
             New template
           </Button>
@@ -112,41 +167,89 @@ export default function RecentSubmissionsPage() {
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2} mb={3}>
         <StatCard label="Total results" value={dashboard?.summary.totalResults ?? 0} />
         <StatCard label="Children assessed" value={dashboard?.summary.totalChildrenAssessed ?? 0} />
-        <StatCard label="Templates" value={dashboard?.summary.totalTemplates ?? 0} />
+        <StatCard label="Filtered results" value={filtered.length} helper="Matching current search" />
       </Box>
 
-      <DashboardCard>
-        <Typography variant="h5">All submissions</Typography>
-        <Stack spacing={1.5} sx={{ mt: 2.25 }}>
-          {dashboard?.recentResults.map((result) => (
-            <Box
-              key={result.child_assessment_id}
-              sx={{
-                p: 2,
-                borderRadius: 4,
-                background: "rgba(255,255,255,0.56)",
-                border: "1px solid rgba(122, 156, 156, 0.14)",
-              }}
-            >
-              <Typography sx={{ fontWeight: 700 }}>
-                {result.child?.first_name || "-"} {result.child?.last_name || ""}
-              </Typography>
-              <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                {result.assessment?.name || "-"} | {formatDate(result.assessed_at, "en-US")}
-              </Typography>
-              <Box display="flex" gap={1} flexWrap="wrap" sx={{ mt: 1.25 }}>
-                <Chip label={`Score ${result.total_score ?? 0}`} />
-                {result.band?.severity_level && (
-                  <Chip label={titleCase(result.band.severity_level)} color="primary" />
-                )}
-              </Box>
-            </Box>
-          ))}
-          {dashboard?.recentResults.length === 0 && (
-            <Typography color="text.secondary">No submitted assessments yet.</Typography>
-          )}
-        </Stack>
-      </DashboardCard>
+      <SearchSettingsCard description="Search by child name or assessment. Filter by time range and severity level.">
+        <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "minmax(0,1.5fr) 180px 180px" }} gap={2}>
+          <TextField
+            label="Search submissions"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+            placeholder="Child name, assessment name"
+            fullWidth
+          />
+          <TextField
+            select
+            label="Time range"
+            value={rangeFilter}
+            onChange={(e) => { setRangeFilter(e.target.value); setPage(1); }}
+            fullWidth
+          >
+            <MenuItem value="all">All time</MenuItem>
+            <MenuItem value="today">Today</MenuItem>
+            <MenuItem value="week">Last 7 days</MenuItem>
+            <MenuItem value="month">Last 30 days</MenuItem>
+          </TextField>
+          <TextField
+            select
+            label="Severity"
+            value={severityFilter}
+            onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}
+            fullWidth
+          >
+            <MenuItem value="all">All severities</MenuItem>
+            <MenuItem value="normal">Normal</MenuItem>
+            <MenuItem value="mild">Mild</MenuItem>
+            <MenuItem value="moderate">Moderate</MenuItem>
+            <MenuItem value="severe">Severe</MenuItem>
+          </TextField>
+        </Box>
+      </SearchSettingsCard>
+
+      <Box sx={{ mt: 2.5 }}>
+        <PaginatedTableCard
+          title="Submissions"
+          subtitle={`${filtered.length} submission${filtered.length !== 1 ? "s" : ""} found`}
+          page={page}
+          pageCount={Math.max(1, Math.ceil(filtered.length / pageSize))}
+          onPageChange={setPage}
+          empty={filtered.length === 0}
+          emptyLabel="No submissions match the current filters."
+          header={
+            <TableRow>
+              <TableCell>Child</TableCell>
+              <TableCell>Assessment</TableCell>
+              <TableCell>Score</TableCell>
+              <TableCell>Severity</TableCell>
+              <TableCell>Date</TableCell>
+            </TableRow>
+          }
+          body={
+            <>
+              {paged.map((result) => (
+                <TableRow key={result.child_assessment_id} hover>
+                  <TableCell sx={{ fontWeight: 600 }}>
+                    {result.child?.first_name || "-"} {result.child?.last_name || ""}
+                  </TableCell>
+                  <TableCell>{result.assessment?.name || "-"}</TableCell>
+                  <TableCell>{result.total_score ?? 0}</TableCell>
+                  <TableCell>
+                    {result.band?.severity_level ? (
+                      <Chip
+                        size="small"
+                        label={titleCase(result.band.severity_level)}
+                        color={severityColor(result.band.severity_level) as any}
+                      />
+                    ) : "-"}
+                  </TableCell>
+                  <TableCell>{formatDate(result.assessed_at, "en-US")}</TableCell>
+                </TableRow>
+              ))}
+            </>
+          }
+        />
+      </Box>
     </AppShell>
   );
 }

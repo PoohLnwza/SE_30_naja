@@ -1,7 +1,7 @@
 "use client";
 
 import type { AxiosError } from "axios";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
@@ -129,6 +129,14 @@ function createEmptyTemplate(): TemplateFormState {
 }
 
 export default function StaffAssessmentsPage() {
+  return (
+    <Suspense>
+      <StaffAssessmentsContent />
+    </Suspense>
+  );
+}
+
+function StaffAssessmentsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [profile, setProfile] = useState<Profile | null>(null);

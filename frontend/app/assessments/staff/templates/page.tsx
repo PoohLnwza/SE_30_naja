@@ -1,17 +1,23 @@
 "use client";
 
 import type { AxiosError } from "axios";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Alert,
   Box,
   Button,
   Chip,
+  MenuItem,
   Stack,
+  TableCell,
+  TableRow,
+  TextField,
   Typography,
 } from "@mui/material";
-import { AppShell, DashboardCard, PageSkeleton, StatCard } from "@/app/components/app-shell";
+import { AppShell, PageSkeleton, StatCard } from "@/app/components/app-shell";
+import { SearchSettingsCard } from "@/app/components/search-settings-card";
+import { PaginatedTableCard } from "@/app/components/paginated-table-card";
 import { staffNav } from "@/app/components/navigation";
 import api from "@/lib/api";
 import type { Profile } from "@/lib/access";
@@ -32,6 +38,8 @@ type ApiErrorResponse = {
   message?: string | string[];
 };
 
+const pageSize = 8;
+
 export default function TemplateLibraryPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -39,6 +47,9 @@ export default function TemplateLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
 
   const extractMessage = (err: unknown, fallback: string) => {
     const e = err as AxiosError<ApiErrorResponse>;
@@ -84,6 +95,21 @@ export default function TemplateLibraryPage() {
     }
   };
 
+  const filtered = useMemo(() => {
+    return templates.filter((t) => {
+      const matchStatus =
+        statusFilter === "all"
+          ? true
+          : statusFilter === "locked"
+            ? t.resultCount > 0
+            : t.resultCount === 0;
+      const haystack = `${t.name ?? ""} ${t.creator?.first_name ?? ""} ${t.creator?.last_name ?? ""} ${t.creator?.role ?? ""}`.toLowerCase();
+      return matchStatus && haystack.includes(query.toLowerCase());
+    });
+  }, [templates, query, statusFilter]);
+
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+
   if (loading) return <PageSkeleton />;
 
   return (
@@ -97,6 +123,9 @@ export default function TemplateLibraryPage() {
       profileMeta="Assessment operations"
       actions={
         <>
+          <Button variant="outlined" onClick={() => router.back()}>
+            Back
+          </Button>
           <Button variant="outlined" onClick={() => router.push("/assessments/staff")}>
             New template
           </Button>
@@ -112,58 +141,98 @@ export default function TemplateLibraryPage() {
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
 
-      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(2, 1fr)" }} gap={2} mb={3}>
+      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2} mb={3}>
         <StatCard label="Templates" value={templates.length} />
-        <StatCard label="With submissions" value={templates.filter((t) => t.resultCount > 0).length} />
+        <StatCard label="Locked" value={templates.filter((t) => t.resultCount > 0).length} helper="Has submissions" />
+        <StatCard label="Editable" value={templates.filter((t) => t.resultCount === 0).length} helper="No submissions yet" />
       </Box>
 
-      <DashboardCard>
-        <Typography variant="h5">All templates</Typography>
-        <Stack spacing={1.5} sx={{ mt: 2.25 }}>
-          {templates.map((template) => (
-            <Box
-              key={template.assessment_id}
-              sx={{
-                p: 2,
-                borderRadius: 4,
-                background: "rgba(255,255,255,0.56)",
-                border: "1px solid rgba(122, 156, 156, 0.14)",
-              }}
-            >
-              <Typography sx={{ fontWeight: 700 }}>{template.name || "-"}</Typography>
-              <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                {template.questionCount} questions | {template.resultCount} results
-              </Typography>
-              <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                Owner: {template.creator?.first_name || "-"} {template.creator?.last_name || ""}
-              </Typography>
-              <Box display="flex" gap={1} flexWrap="wrap" sx={{ mt: 1.5 }}>
-                <Button
-                  variant="outlined"
-                  disabled={template.resultCount > 0}
-                  onClick={() => router.push(`/assessments/staff?edit=${template.assessment_id}`)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  disabled={template.resultCount > 0}
-                  onClick={() => handleDelete(template.assessment_id)}
-                >
-                  Delete
-                </Button>
-                {template.resultCount > 0 && (
-                  <Chip size="small" label="Locked after submissions" />
-                )}
-              </Box>
-            </Box>
-          ))}
-          {templates.length === 0 && (
-            <Typography color="text.secondary">No assessment templates yet.</Typography>
-          )}
-        </Stack>
-      </DashboardCard>
+      <SearchSettingsCard description="Search by template name or owner. Filter by lock status.">
+        <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "minmax(0,1.5fr) 200px" }} gap={2}>
+          <TextField
+            label="Search templates"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+            placeholder="Template name, owner name, role"
+            fullWidth
+          />
+          <TextField
+            select
+            label="Status"
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            fullWidth
+          >
+            <MenuItem value="all">All templates</MenuItem>
+            <MenuItem value="locked">Locked (has submissions)</MenuItem>
+            <MenuItem value="editable">Editable (no submissions)</MenuItem>
+          </TextField>
+        </Box>
+      </SearchSettingsCard>
+
+      <Box sx={{ mt: 2.5 }}>
+        <PaginatedTableCard
+          title="Templates"
+          subtitle={`${filtered.length} template${filtered.length !== 1 ? "s" : ""} found`}
+          page={page}
+          pageCount={Math.max(1, Math.ceil(filtered.length / pageSize))}
+          onPageChange={setPage}
+          empty={filtered.length === 0}
+          emptyLabel="No templates match the current search."
+          header={
+            <TableRow>
+              <TableCell>Template name</TableCell>
+              <TableCell>Questions</TableCell>
+              <TableCell>Results</TableCell>
+              <TableCell>Owner</TableCell>
+              <TableCell>Status</TableCell>
+              <TableCell>Actions</TableCell>
+            </TableRow>
+          }
+          body={
+            <>
+              {paged.map((template) => (
+                <TableRow key={template.assessment_id} hover>
+                  <TableCell sx={{ fontWeight: 600 }}>{template.name || "-"}</TableCell>
+                  <TableCell>{template.questionCount}</TableCell>
+                  <TableCell>{template.resultCount}</TableCell>
+                  <TableCell>
+                    {template.creator?.first_name || "-"} {template.creator?.last_name || ""}
+                  </TableCell>
+                  <TableCell>
+                    {template.resultCount > 0 ? (
+                      <Chip size="small" label="Locked" color="warning" />
+                    ) : (
+                      <Chip size="small" label="Editable" color="success" />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={template.resultCount > 0}
+                        onClick={() => router.push(`/assessments/staff?edit=${template.assessment_id}`)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        disabled={template.resultCount > 0}
+                        onClick={() => handleDelete(template.assessment_id)}
+                      >
+                        Delete
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </>
+          }
+        />
+      </Box>
     </AppShell>
   );
 }
